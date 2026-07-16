@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "air-federation-verifier"
+version = "0.1.0"
+description = "Independent reference verifier for AIR/1 agent intent receipts — verify without trusting the issuer."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+keywords = ["x402", "air", "agent", "receipt", "verification", "web3"]
+dependencies = [
+    "eth-account>=0.10",
+    "PyNaCl>=1.5",
+]
+
+[project.optional-dependencies]
+chain = ["requests>=2.28"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+air-verify = "air_federation_verifier.__main__:main"
+
+[tool.setuptools]
+packages = ["air_federation_verifier"]

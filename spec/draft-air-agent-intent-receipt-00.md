@@ -3,10 +3,10 @@ title: "AIR/1: Offline-Verifiable Agent Intent Receipts over x402"
 abbrev: "Agent Intent Receipt"
 category: std
 docname: draft-air-agent-intent-receipt-00
-submissiontype: independent
+submissiontype: IETF
 number:
 date:
-consensus: false
+consensus: true
 v: 3
 area: "Applications and Real-Time"
 keyword:

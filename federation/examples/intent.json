@@ -1,0 +1,8 @@
+{
+  "action": "search",
+  "query": "cheapest flight SFO->NRT",
+  "constraints": {
+    "max_price_usd": 900,
+    "nonstop": true
+  }
+}
