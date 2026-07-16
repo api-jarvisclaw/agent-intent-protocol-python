@@ -1,14 +1,10 @@
 name: Release
 
-# Publishes to PyPI via Trusted Publishing (OIDC) — no API token stored.
-# Trigger by pushing a version tag, e.g. `git tag v0.1.0 && git push origin v0.1.0`.
+# Publishes to PyPI on version-tag push, e.g. `git tag v0.1.0 && git push origin v0.1.0`.
 #
-# One-time setup on PyPI (https://pypi.org/manage/account/publishing/):
-#   Project name:      agent-intent-protocol
-#   Owner:             api-jarvisclaw
-#   Repository name:   agent-intent-protocol-python
-#   Workflow name:     release.yml
-#   Environment name:  pypi
+# Setup: add a repository secret named PYPI_API_TOKEN
+#   (Settings -> Secrets and variables -> Actions -> New repository secret)
+#   Value: a PyPI API token scoped to the `agent-intent-protocol` project.
 
 on:
   push:
@@ -16,7 +12,7 @@ on:
       - "v*"
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,23 +24,8 @@ jobs:
           python -m pip install build twine
           python -m build
           python -m twine check dist/*
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write  # required for Trusted Publishing (OIDC)
-    steps:
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: python -m twine upload dist/*
