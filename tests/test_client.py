@@ -20,7 +20,6 @@ from agent_intent_x402 import (
     IntentType,
     OptimizeFor,
     ResolveResult,
-    Wallet,
 )
 
 

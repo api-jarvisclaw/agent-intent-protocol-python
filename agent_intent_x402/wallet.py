@@ -23,7 +23,7 @@ import base64
 import json
 import secrets
 import time
-from typing import Any, Optional
+from typing import Any
 
 # Default asset: USDC on Base (eip155:8453). Used only when a 402 challenge
 # omits the asset address. The EIP-712 domain name/version below match the
