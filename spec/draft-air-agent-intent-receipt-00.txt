@@ -82,9 +82,14 @@ Table of Contents
    9.  Security Considerations . . . . . . . . . . . . . . . . . . .  10
    10. Normative References  . . . . . . . . . . . . . . . . . . . .  11
    11. Informative References  . . . . . . . . . . . . . . . . . . .  12
-   Appendix A.  Reference Implementation . . . . . . . . . . . . . .  12
-   Acknowledgments . . . . . . . . . . . . . . . . . . . . . . . . .  12
-   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . .  13
+   Appendix A.  Test Vectors . . . . . . . . . . . . . . . . . . . .  12
+     A.1.  Inputs  . . . . . . . . . . . . . . . . . . . . . . . . .  12
+     A.2.  Computed Hashes . . . . . . . . . . . . . . . . . . . . .  13
+     A.3.  secp256k1-eip191 (Base) Vector  . . . . . . . . . . . . .  13
+     A.4.  ed25519 (Solana) Vector . . . . . . . . . . . . . . . . .  14
+   Appendix B.  Reference Implementation . . . . . . . . . . . . . .  14
+   Acknowledgments . . . . . . . . . . . . . . . . . . . . . . . . .  14
+   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . .  14
 
 1.  Introduction
 
@@ -101,11 +106,6 @@ Table of Contents
    a third party (an auditor, a marketplace, or a dispute resolver) can
    check them after the fact, offline, with no access to the issuer.
 
-   AIR/1 is transport- and platform-neutral.  It does not depend on any
-   particular gateway, facilitator, or chain beyond the abstractions
-   defined here.
-
-
 
 
 
@@ -113,6 +113,10 @@ Editors                  Expires 17 January 2027                [Page 2]
 
 Internet-Draft            Agent Intent Receipt                 July 2026
 
+
+   AIR/1 is transport- and platform-neutral.  It does not depend on any
+   particular gateway, facilitator, or chain beyond the abstractions
+   defined here.
 
 1.1.  Requirements Language
 
@@ -145,6 +149,27 @@ Internet-Draft            Agent Intent Receipt                 July 2026
    AIR/1 is trust-minimizing: three independent parties back three
    independent facts, and no single party can forge the whole receipt.
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Editors                  Expires 17 January 2027                [Page 3]
+
+Internet-Draft            Agent Intent Receipt                 July 2026
+
+
    +===================+==============+================================+
    | Fact              | Backed by    | How a verifier checks it       |
    +===================+==============+================================+
@@ -160,15 +185,6 @@ Internet-Draft            Agent Intent Receipt                 July 2026
    +-------------------+--------------+--------------------------------+
 
           Table 1: Facts, backers, and how a verifier checks each
-
-
-
-
-
-Editors                  Expires 17 January 2027                [Page 3]
-
-Internet-Draft            Agent Intent Receipt                 July 2026
-
 
    The facilitator holds its own settlement key and lands the payment
    on-chain; the receipt never needs that key.  The issuer signs the
@@ -187,22 +203,6 @@ Internet-Draft            Agent Intent Receipt                 July 2026
 
    An unsigned receipt is a JSON object [RFC8259] with the following
    members.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -653,7 +653,112 @@ Internet-Draft            Agent Intent Receipt                 July 2026
               Recommended Elliptic Curve Domain Parameters", 2010,
               <https://www.secg.org/sec2-v2.pdf>.
 
-Appendix A.  Reference Implementation
+Appendix A.  Test Vectors
+
+   This appendix provides deterministic golden test vectors.  Any
+   conforming implementation MUST reproduce the exact hash and canonical
+   byte values below from the given inputs, and MUST produce byte-
+   identical signatures given the listed test keys.  The keys here are
+   well-known test keys and MUST NOT be used on a live chain.
+
+A.1.  Inputs
+
+   Intent object (hashed to intent_hash):
+
+
+
+
+
+Editors                  Expires 17 January 2027               [Page 12]
+
+Internet-Draft            Agent Intent Receipt                 July 2026
+
+
+   {
+     "action": "search",
+     "query": "cheapest flight SFO->NRT",
+     "constraints": {
+       "max_price_usd": 900,
+       "nonstop": true
+     }
+   }
+
+   Result object (hashed to result_hash):
+
+   {
+     "provider": "acme-search",
+     "answers": [
+       {
+         "price_usd": 812
+       }
+     ]
+   }
+
+   Settlement object embedded in the receipt:
+
+{
+  "tx_hash": "0x58f1c0000000000000000000000000000000000000000000000000000000abcd",
+  "amount": "0.05",
+  "currency": "USDC",
+  "chain": "base",
+  "facilitator": "facilitator.example",
+  "timestamp": "2026-07-16T00:00:00Z"
+}
+
+   Fixed metadata: issued_at = "2026-07-16T00:00:00Z", issuer =
+   "issuer.example".
+
+   Test keys (test-only, never used on a live chain):
+
+secp256k1 private key: 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+ed25519 seed (hex):    000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+
+A.2.  Computed Hashes
+
+intent_hash = e89e9e4315f34c58f639eb47b4bb627c1565fd39a8475c3b7fd9dab731feffb8
+result_hash = 262c92c42f58d42d907971cab83a15de0232cffbdd96461a464bf2c07fc20776
+
+A.3.  secp256k1-eip191 (Base) Vector
+
+   Signer address: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+
+
+
+
+Editors                  Expires 17 January 2027               [Page 13]
+
+Internet-Draft            Agent Intent Receipt                 July 2026
+
+
+   Canonical signable bytes (UTF-8), the exact string that is hashed and
+   signed:
+
+{"intent_hash":"e89e9e4315f34c58f639eb47b4bb627c1565fd39a8475c3b7fd9dab731feffb8","issued_at":"2026-07-16T00:00:00Z","issuer":"issuer.example","provider_used":"acme-search","result_hash":"262c92c42f58d42d907971cab83a15de0232cffbdd96461a464bf2c07fc20776","settlement":{"amount":"0.05","chain":"base","currency":"USDC","facilitator":"facilitator.example","timestamp":"2026-07-16T00:00:00Z","tx_hash":"0x58f1c0000000000000000000000000000000000000000000000000000000abcd"},"signature":{"algorithm":"secp256k1-eip191","signer":"0x70997970C51812dc3A010C7d01b50e0d17dc79C8"},"version":"AIR/1"}
+
+   Signature (base64):
+   EwCqgPNvVSjPtby8BMtxLLo+i0q7cc4TT4ScANVn1lBOTw263W1ntIcYNhq19k4MrLWgWHzY4pfr6ap/
+   lcfwuhw=
+
+   Signature (hex):
+   1300aa80f36f5528cfb5bcbc04cb712cba3e8b4abb71ce134f849c00d567d6504e4f0dbadd6d67b48718361ab5f64e0cacb5a0587cd8e297ebe9aa7f95c7f0ba1c
+
+A.4.  ed25519 (Solana) Vector
+
+   Signer public key (base58):
+   FAe4sisG95oZ42w7buUn5qEE4TAnfTTFPiguZUHmhiF
+
+   Canonical signable bytes (UTF-8), the exact string that is signed:
+
+{"intent_hash":"e89e9e4315f34c58f639eb47b4bb627c1565fd39a8475c3b7fd9dab731feffb8","issued_at":"2026-07-16T00:00:00Z","issuer":"issuer.example","provider_used":"acme-search","result_hash":"262c92c42f58d42d907971cab83a15de0232cffbdd96461a464bf2c07fc20776","settlement":{"amount":"0.05","chain":"base","currency":"USDC","facilitator":"facilitator.example","timestamp":"2026-07-16T00:00:00Z","tx_hash":"0x58f1c0000000000000000000000000000000000000000000000000000000abcd"},"signature":{"algorithm":"ed25519","signer":"FAe4sisG95oZ42w7buUn5qEE4TAnfTTFPiguZUHmhiF"},"version":"AIR/1"}
+
+   Signature (base64):
+   teFQgXN6pI5Vud5E8YpvDUhej9aX4PIaAFd+oQp6Cagkq3W5OiOPPE/Yt+lod6fo6d/
+   epeure2jCGeNJhlU9CA==
+
+   Signature (hex):
+   b5e15081737aa48e55b9de44f18a6f0d485e8fd697e0f21a00577ea10a7a09a824ab75b93a238f3c4fd8b7e96877a7e8e9dfdea5ebab7b68c219e34986553d08
+
+Appendix B.  Reference Implementation
 
    The agent_intent_x402.receipt module of the agent-intent-x402 project
    implements this specification: canonicalize, hash_object,
@@ -667,13 +772,6 @@ Acknowledgments
    earlier agent-intent projects into a platform-neutral, x402-native
    form.
 
-
-
-Editors                  Expires 17 January 2027               [Page 12]
-
-Internet-Draft            Agent Intent Receipt                 July 2026
-
-
 Author's Address
 
    AIR Editors (editor)
@@ -683,46 +781,4 @@ Author's Address
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Editors                  Expires 17 January 2027               [Page 13]
+Editors                  Expires 17 January 2027               [Page 14]

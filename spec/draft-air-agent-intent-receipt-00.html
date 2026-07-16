@@ -31,12 +31,12 @@
     google-i18n-address 3.1.1
     intervaltree 3.2.1
     Jinja2 3.1.6
-    lxml 6.0.2
+    lxml 6.1.1
     natsort 8.4.0
-    platformdirs 4.9.6
+    platformdirs 4.10.0
     pycountry 26.2.16
     PyYAML 6.0.3
-    requests 2.33.0
+    requests 2.34.2
     wcwidth 0.8.2
 -->
 <link href="draft-air-agent-intent-receipt-00.xml" rel="alternate" type="application/rfc+xml">
@@ -1385,13 +1385,30 @@ li > p:last-of-type:only-child {
             <p id="section-toc.1-1.11.1"><a href="#section-11" class="auto internal xref">11</a>. <a href="#name-informative-references" class="internal xref">Informative References</a></p>
 </li>
           <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.12">
-            <p id="section-toc.1-1.12.1"><a href="#appendix-A" class="auto internal xref">Appendix A</a>.  <a href="#name-reference-implementation" class="internal xref">Reference Implementation</a></p>
+            <p id="section-toc.1-1.12.1"><a href="#appendix-A" class="auto internal xref">Appendix A</a>.  <a href="#name-test-vectors" class="internal xref">Test Vectors</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.12.2.1">
+                <p id="section-toc.1-1.12.2.1.1"><a href="#appendix-A.1" class="auto internal xref">A.1</a>.  <a href="#name-inputs" class="internal xref">Inputs</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.12.2.2">
+                <p id="section-toc.1-1.12.2.2.1"><a href="#appendix-A.2" class="auto internal xref">A.2</a>.  <a href="#name-computed-hashes" class="internal xref">Computed Hashes</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.12.2.3">
+                <p id="section-toc.1-1.12.2.3.1"><a href="#appendix-A.3" class="auto internal xref">A.3</a>.  <a href="#name-secp256k1-eip191-base-vecto" class="internal xref">secp256k1-eip191 (Base) Vector</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.12.2.4">
+                <p id="section-toc.1-1.12.2.4.1"><a href="#appendix-A.4" class="auto internal xref">A.4</a>.  <a href="#name-ed25519-solana-vector" class="internal xref">ed25519 (Solana) Vector</a></p>
+</li>
+            </ul>
 </li>
           <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.13">
-            <p id="section-toc.1-1.13.1"><a href="#appendix-B" class="auto internal xref"></a><a href="#name-acknowledgments" class="internal xref">Acknowledgments</a></p>
+            <p id="section-toc.1-1.13.1"><a href="#appendix-B" class="auto internal xref">Appendix B</a>.  <a href="#name-reference-implementation" class="internal xref">Reference Implementation</a></p>
 </li>
           <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.14">
-            <p id="section-toc.1-1.14.1"><a href="#appendix-C" class="auto internal xref"></a><a href="#name-authors-address" class="internal xref">Author's Address</a></p>
+            <p id="section-toc.1-1.14.1"><a href="#appendix-C" class="auto internal xref"></a><a href="#name-acknowledgments" class="internal xref">Acknowledgments</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.15">
+            <p id="section-toc.1-1.15.1"><a href="#appendix-D" class="auto internal xref"></a><a href="#name-authors-address" class="internal xref">Author's Address</a></p>
 </li>
         </ul>
 </nav>
@@ -2083,31 +2100,130 @@ li > p:last-of-type:only-child {
 <dd class="break"></dd>
 </dl>
 </section>
-<div id="reference-implementation">
+<div id="test-vectors">
 <section id="appendix-A">
-      <h2 id="name-reference-implementation">
-<a href="#appendix-A" class="section-number selfRef">Appendix A. </a><a href="#name-reference-implementation" class="section-name selfRef">Reference Implementation</a>
+      <h2 id="name-test-vectors">
+<a href="#appendix-A" class="section-number selfRef">Appendix A. </a><a href="#name-test-vectors" class="section-name selfRef">Test Vectors</a>
       </h2>
-<p id="appendix-A-1">The <code>agent_intent_x402.receipt</code> module of the agent-intent-x402
+<p id="appendix-A-1">This appendix provides deterministic golden test vectors. Any
+      conforming implementation MUST reproduce the exact hash and canonical
+      byte values below from the given inputs, and MUST produce byte-identical
+      signatures given the listed test keys. The keys here are well-known test
+      keys and MUST NOT be used on a live chain.<a href="#appendix-A-1" class="pilcrow">¶</a></p>
+<div id="tv-inputs">
+<section id="appendix-A.1">
+        <h3 id="name-inputs">
+<a href="#appendix-A.1" class="section-number selfRef">A.1. </a><a href="#name-inputs" class="section-name selfRef">Inputs</a>
+        </h3>
+<p id="appendix-A.1-1">Intent object (hashed to <code>intent_hash</code>):<a href="#appendix-A.1-1" class="pilcrow">¶</a></p>
+<div class="alignLeft art-text artwork" id="appendix-A.1-2">
+<pre>{
+  "action": "search",
+  "query": "cheapest flight SFO-&gt;NRT",
+  "constraints": {
+    "max_price_usd": 900,
+    "nonstop": true
+  }
+}</pre><a href="#appendix-A.1-2" class="pilcrow">¶</a>
+</div>
+<p id="appendix-A.1-3">Result object (hashed to <code>result_hash</code>):<a href="#appendix-A.1-3" class="pilcrow">¶</a></p>
+<div class="alignLeft art-text artwork" id="appendix-A.1-4">
+<pre>{
+  "provider": "acme-search",
+  "answers": [
+    {
+      "price_usd": 812
+    }
+  ]
+}</pre><a href="#appendix-A.1-4" class="pilcrow">¶</a>
+</div>
+<p id="appendix-A.1-5">Settlement object embedded in the receipt:<a href="#appendix-A.1-5" class="pilcrow">¶</a></p>
+<div class="alignLeft art-text artwork" id="appendix-A.1-6">
+<pre>{
+  "tx_hash": "0x58f1c0000000000000000000000000000000000000000000000000000000abcd",
+  "amount": "0.05",
+  "currency": "USDC",
+  "chain": "base",
+  "facilitator": "facilitator.example",
+  "timestamp": "2026-07-16T00:00:00Z"
+}</pre><a href="#appendix-A.1-6" class="pilcrow">¶</a>
+</div>
+<p id="appendix-A.1-7">Fixed metadata: <code>issued_at</code> = "2026-07-16T00:00:00Z",
+        <code>issuer</code> = "issuer.example".<a href="#appendix-A.1-7" class="pilcrow">¶</a></p>
+<p id="appendix-A.1-8">Test keys (test-only, never used on a live chain):<a href="#appendix-A.1-8" class="pilcrow">¶</a></p>
+<div class="alignLeft art-text artwork" id="appendix-A.1-9">
+<pre>secp256k1 private key: 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+ed25519 seed (hex):    000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f</pre><a href="#appendix-A.1-9" class="pilcrow">¶</a>
+</div>
+</section>
+</div>
+<div id="tv-hashes">
+<section id="appendix-A.2">
+        <h3 id="name-computed-hashes">
+<a href="#appendix-A.2" class="section-number selfRef">A.2. </a><a href="#name-computed-hashes" class="section-name selfRef">Computed Hashes</a>
+        </h3>
+<div class="alignLeft art-text artwork" id="appendix-A.2-1">
+<pre>intent_hash = e89e9e4315f34c58f639eb47b4bb627c1565fd39a8475c3b7fd9dab731feffb8
+result_hash = 262c92c42f58d42d907971cab83a15de0232cffbdd96461a464bf2c07fc20776</pre><a href="#appendix-A.2-1" class="pilcrow">¶</a>
+</div>
+</section>
+</div>
+<div id="tv-evm">
+<section id="appendix-A.3">
+        <h3 id="name-secp256k1-eip191-base-vecto">
+<a href="#appendix-A.3" class="section-number selfRef">A.3. </a><a href="#name-secp256k1-eip191-base-vecto" class="section-name selfRef">secp256k1-eip191 (Base) Vector</a>
+        </h3>
+<p id="appendix-A.3-1">Signer address: <code>0x70997970C51812dc3A010C7d01b50e0d17dc79C8</code><a href="#appendix-A.3-1" class="pilcrow">¶</a></p>
+<p id="appendix-A.3-2">Canonical signable bytes (UTF-8), the exact string that is hashed
+        and signed:<a href="#appendix-A.3-2" class="pilcrow">¶</a></p>
+<div class="alignLeft art-text artwork" id="appendix-A.3-3">
+<pre>{"intent_hash":"e89e9e4315f34c58f639eb47b4bb627c1565fd39a8475c3b7fd9dab731feffb8","issued_at":"2026-07-16T00:00:00Z","issuer":"issuer.example","provider_used":"acme-search","result_hash":"262c92c42f58d42d907971cab83a15de0232cffbdd96461a464bf2c07fc20776","settlement":{"amount":"0.05","chain":"base","currency":"USDC","facilitator":"facilitator.example","timestamp":"2026-07-16T00:00:00Z","tx_hash":"0x58f1c0000000000000000000000000000000000000000000000000000000abcd"},"signature":{"algorithm":"secp256k1-eip191","signer":"0x70997970C51812dc3A010C7d01b50e0d17dc79C8"},"version":"AIR/1"}</pre><a href="#appendix-A.3-3" class="pilcrow">¶</a>
+</div>
+<p id="appendix-A.3-4">Signature (base64): <code>EwCqgPNvVSjPtby8BMtxLLo+i0q7cc4TT4ScANVn1lBOTw263W1ntIcYNhq19k4MrLWgWHzY4pfr6ap/lcfwuhw=</code><a href="#appendix-A.3-4" class="pilcrow">¶</a></p>
+<p id="appendix-A.3-5">Signature (hex): <code>1300aa80f36f5528cfb5bcbc04cb712cba3e8b4abb71ce134f849c00d567d6504e4f0dbadd6d67b48718361ab5f64e0cacb5a0587cd8e297ebe9aa7f95c7f0ba1c</code><a href="#appendix-A.3-5" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="tv-solana">
+<section id="appendix-A.4">
+        <h3 id="name-ed25519-solana-vector">
+<a href="#appendix-A.4" class="section-number selfRef">A.4. </a><a href="#name-ed25519-solana-vector" class="section-name selfRef">ed25519 (Solana) Vector</a>
+        </h3>
+<p id="appendix-A.4-1">Signer public key (base58): <code>FAe4sisG95oZ42w7buUn5qEE4TAnfTTFPiguZUHmhiF</code><a href="#appendix-A.4-1" class="pilcrow">¶</a></p>
+<p id="appendix-A.4-2">Canonical signable bytes (UTF-8), the exact string that is signed:<a href="#appendix-A.4-2" class="pilcrow">¶</a></p>
+<div class="alignLeft art-text artwork" id="appendix-A.4-3">
+<pre>{"intent_hash":"e89e9e4315f34c58f639eb47b4bb627c1565fd39a8475c3b7fd9dab731feffb8","issued_at":"2026-07-16T00:00:00Z","issuer":"issuer.example","provider_used":"acme-search","result_hash":"262c92c42f58d42d907971cab83a15de0232cffbdd96461a464bf2c07fc20776","settlement":{"amount":"0.05","chain":"base","currency":"USDC","facilitator":"facilitator.example","timestamp":"2026-07-16T00:00:00Z","tx_hash":"0x58f1c0000000000000000000000000000000000000000000000000000000abcd"},"signature":{"algorithm":"ed25519","signer":"FAe4sisG95oZ42w7buUn5qEE4TAnfTTFPiguZUHmhiF"},"version":"AIR/1"}</pre><a href="#appendix-A.4-3" class="pilcrow">¶</a>
+</div>
+<p id="appendix-A.4-4">Signature (base64): <code>teFQgXN6pI5Vud5E8YpvDUhej9aX4PIaAFd+oQp6Cagkq3W5OiOPPE/Yt+lod6fo6d/epeure2jCGeNJhlU9CA==</code><a href="#appendix-A.4-4" class="pilcrow">¶</a></p>
+<p id="appendix-A.4-5">Signature (hex): <code>b5e15081737aa48e55b9de44f18a6f0d485e8fd697e0f21a00577ea10a7a09a824ab75b93a238f3c4fd8b7e96877a7e8e9dfdea5ebab7b68c219e34986553d08</code><a href="#appendix-A.4-5" class="pilcrow">¶</a></p>
+</section>
+</div>
+</section>
+</div>
+<div id="reference-implementation">
+<section id="appendix-B">
+      <h2 id="name-reference-implementation">
+<a href="#appendix-B" class="section-number selfRef">Appendix B. </a><a href="#name-reference-implementation" class="section-name selfRef">Reference Implementation</a>
+      </h2>
+<p id="appendix-B-1">The <code>agent_intent_x402.receipt</code> module of the agent-intent-x402
       project implements this specification: <code>canonicalize</code>,
       <code>hash_object</code>, <code>build_receipt</code>, <code>sign_receipt</code>,
       <code>verify_receipt</code>, and the <code>secp256k1-eip191</code> and
       <code>ed25519</code> signer/verifier suites. It is provided for
-      interoperability testing and is not normative.<a href="#appendix-A-1" class="pilcrow">¶</a></p>
+      interoperability testing and is not normative.<a href="#appendix-B-1" class="pilcrow">¶</a></p>
 </section>
 </div>
 <div id="acknowledgments">
-<section id="appendix-B">
+<section id="appendix-C">
       <h2 id="name-acknowledgments">
 <a href="#name-acknowledgments" class="section-name selfRef">Acknowledgments</a>
       </h2>
-<p id="appendix-B-1">This work distills the offline-verifiable-receipt idea explored by
+<p id="appendix-C-1">This work distills the offline-verifiable-receipt idea explored by
       earlier agent-intent projects into a platform-neutral, x402-native
-      form.<a href="#appendix-B-1" class="pilcrow">¶</a></p>
+      form.<a href="#appendix-C-1" class="pilcrow">¶</a></p>
 </section>
 </div>
 <div id="authors-addresses">
-<section id="appendix-C">
+<section id="appendix-D">
       <h2 id="name-authors-address">
 <a href="#name-authors-address" class="section-name selfRef">Author's Address</a>
       </h2>

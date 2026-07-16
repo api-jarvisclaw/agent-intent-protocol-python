@@ -28,7 +28,7 @@ dependencies = [
 
 [project.optional-dependencies]
 solana = ["pynacl>=1.5.0"]
-dev = ["pytest>=7.0", "pytest-httpx>=0.21.0", "ruff>=0.1.0", "pynacl>=1.5.0"]
+dev = ["pytest>=7.0", "pytest-httpx>=0.21.0", "pytest-asyncio>=0.23.0", "ruff>=0.1.0", "pynacl>=1.5.0"]
 
 [project.urls]
 Homepage = "https://github.com/api-jarvisclaw/agent-intent-x402"
@@ -47,6 +47,7 @@ packages = ["agent_intent_x402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [tool.ruff]
 target-version = "py310"
