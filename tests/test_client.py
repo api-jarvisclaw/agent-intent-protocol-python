@@ -12,7 +12,7 @@ import json
 import httpx
 import pytest
 
-from agent_intent_protocol import (
+from agent_intent_x402 import (
     AIPAPIError,
     AIPAuthError,
     AIPClient,
@@ -20,6 +20,7 @@ from agent_intent_protocol import (
     IntentType,
     OptimizeFor,
     ResolveResult,
+    Wallet,
 )
 
 

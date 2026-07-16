@@ -1,45 +1,66 @@
-# Agent Intent Protocol — Python SDK
+# agent-intent-x402
 
-Declare *what* you want. Let the protocol find *who* does it best.
+Pay-per-request access to any service, for AI agents — over the open
+[x402](https://x402.org) protocol.
 
-The Agent Intent Protocol (AIP) decouples an agent's **intent**
-(`chat_completion`, `image_generation`, `web_search`, ...) from the
-provider and model that fulfil it. Instead of hard-wiring your code to a
-single vendor's API, you declare an intent and the protocol routes it to
-the optimal provider — ranked by cost, quality, or latency.
-
-This package is the official Python client. It speaks the AIP wire
-protocol served by any compliant gateway; by default it targets the
-[JarvisClaw](https://api.jarvisclaw.ai) platform.
+Declare *what* you want, discover *who* provides it, and pay for the
+request on-chain with a single signature. No accounts, no API keys, no
+platform lock-in. Your agent carries a wallet; the service quotes a
+price with HTTP `402 Payment Required`; the client signs and settles.
+Because payment speaks the open x402 standard, the same client works
+against any compliant gateway.
 
 ```bash
-pip install agent-intent-protocol
+pip install agent-intent-x402
 ```
 
 ## Quick start
 
-```python
-from agent_intent_protocol import AIPClient, IntentType, OptimizeFor
+Give the client a wallet and it settles `402` challenges automatically —
+sign the payment, retry the request, return the result.
 
-with AIPClient(api_key="sk-...") as client:
-    # Resolve an intent to the best-ranked provider.
+```python
+from agent_intent_x402 import AIPClient, Wallet, IntentType
+
+wallet = Wallet(private_key="0x...")   # your agent's EVM key
+
+with AIPClient(wallet=wallet, endpoint="https://api.example.com") as client:
+    # Resolve an intent to the best-ranked provider. If the gateway
+    # answers 402, the wallet pays and the call transparently retries.
     result = client.resolve(
         IntentType.CHAT_COMPLETION,
         constraints={"max_price_usd": 0.01},
-        preferences={"optimize_for": OptimizeFor.COST},
+        preferences={"optimize_for": "cost"},
     )
     best = result.best_match
     print(f"{best.provider_id} · {best.model} · score={best.score}")
 ```
 
-The API key can also be supplied via the `JARVISCLAW_API_KEY`
-environment variable, in which case `AIPClient()` needs no arguments.
+The private key can also be supplied via the `AIP_WALLET_KEY`
+environment variable, in which case `Wallet()` needs no arguments.
+
+## How payment works
+
+x402 turns HTTP `402 Payment Required` into a usable payment step:
+
+1. The client makes a normal request.
+2. If payment is due, the gateway replies `402` with the accepted terms
+   (amount, asset, recipient, network) in the body.
+3. The wallet signs an [EIP-3009](https://eips.ethereum.org/EIPS/eip-3009)
+   `TransferWithAuthorization` for those exact terms — an EIP-712 typed
+   signature, no gas, no on-chain transaction from your side.
+4. The client retries with a `PAYMENT-SIGNATURE` header. The gateway
+   verifies and settles on-chain, then serves the response.
+
+Payments default to USDC on Base (`eip155:8453`); the network and asset
+come from the gateway's `402` terms, so the wallet always signs exactly
+what it is asked to pay.
 
 ## Resolve, then execute
 
 `resolve` returns ranked matches so you can inspect price and score
-before committing. `execute` resolves *and* runs the intent against the
-selected provider in one call, proxying the provider response back:
+before committing. `execute` resolves *and* runs the intent in one call,
+proxying the provider response back:
 
 ```python
 response = client.execute(
@@ -87,16 +108,19 @@ client.list_providers()
 All exceptions derive from `AIPError`:
 
 - `AIPConnectionError` — the request never reached the gateway.
-- `AIPAuthError` — `401`/`403`, missing or invalid API key.
-- `AIPPaymentRequiredError` — `402`, x402 payment required.
+- `AIPAuthError` — `401`/`403`, missing or invalid credentials.
+- `AIPPaymentRequiredError` — `402`, payment required and no wallet was
+  configured (or the payment was rejected).
 - `AIPAPIError` — any other non-2xx response (`status_code`, `detail`, `body`).
+
+`WalletError` is raised when a `402` challenge cannot be signed (missing
+key, malformed terms).
 
 ## Protocol
 
-The wire format and endpoint contract are defined in the
+The intent wire format and endpoint contract are defined in the
 [Agent Intent Protocol specification](https://github.com/api-jarvisclaw/agent-intent-protocol).
-A Go client is available at
-[agent-intent-protocol-go](https://github.com/api-jarvisclaw/agent-intent-protocol-go).
+The payment layer follows the open [x402](https://x402.org) protocol.
 
 ## License
 

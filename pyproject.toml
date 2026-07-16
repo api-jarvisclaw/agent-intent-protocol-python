@@ -1,14 +1,14 @@
 [project]
-name = "agent-intent-protocol"
-version = "0.1.0"
-description = "Python client for the Agent Intent Protocol — declare an intent, let the protocol route it to the optimal AI provider."
+name = "agent-intent-x402"
+version = "0.2.0"
+description = "Pay-per-request access to any service for AI agents, over the open x402 protocol. Declare an intent, discover a provider, and settle on-chain with a single signature."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
     {name = "JarvisClaw", email = "dev@jarvisclaw.ai"}
 ]
-keywords = ["ai", "agent", "intent", "protocol", "llm", "routing", "jarvisclaw", "aip"]
+keywords = ["x402", "ai", "agent", "intent", "payments", "usdc", "eip-3009", "llm", "http-402"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -18,29 +18,31 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Internet :: WWW/HTTP",
 ]
 
 dependencies = [
     "httpx>=0.24.0",
+    "eth-account>=0.11.0",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "pytest-httpx>=0.21.0", "ruff>=0.1.0"]
 
 [project.urls]
-Homepage = "https://github.com/api-jarvisclaw/agent-intent-protocol-python"
-Documentation = "https://github.com/api-jarvisclaw/agent-intent-protocol-python#readme"
-Repository = "https://github.com/api-jarvisclaw/agent-intent-protocol-python"
-Issues = "https://github.com/api-jarvisclaw/agent-intent-protocol-python/issues"
+Homepage = "https://github.com/api-jarvisclaw/agent-intent-x402"
+Documentation = "https://github.com/api-jarvisclaw/agent-intent-x402#readme"
+Repository = "https://github.com/api-jarvisclaw/agent-intent-x402"
+Issues = "https://github.com/api-jarvisclaw/agent-intent-x402/issues"
 Protocol = "https://github.com/api-jarvisclaw/agent-intent-protocol"
-Platform = "https://api.jarvisclaw.ai"
+x402 = "https://x402.org"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["agent_intent_protocol"]
+packages = ["agent_intent_x402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
