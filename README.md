@@ -20,7 +20,7 @@ against any compliant gateway.
 - **Single-signature payments** — sign an [EIP-3009](https://eips.ethereum.org/EIPS/eip-3009) authorization; the gateway settles on-chain, no gas from your side.
 - **Vendor-neutral** — the same client works against any x402-compliant gateway; nothing here is tied to one platform.
 - **Offline-verifiable receipts** — every settlement can return an [AIR/1](#offline-verifiable-receipts) receipt that anyone can verify without trusting the issuer.
-- **Base and Solana** — `secp256k1`/EIP-191 for EVM chains, `ed25519` for Solana.
+- **Base and Solana** — `secp256k1`/EIP-191 for EVM chains, `ed25519` for Solana. On EVM, payments sign EIP-712 (EIP-3009) and receipts sign EIP-191, from the same key.
 
 ```bash
 pip install agent-intent-x402
@@ -150,7 +150,10 @@ Verification recomputes the intent and result hashes, checks the
 signature against the signer's public key, and rejects any tampering.
 Two signature suites are supported: `secp256k1`/EIP-191 for EVM chains
 like Base (the same key type that signs x402 payments) and `ed25519`
-for Solana. See [`examples/04_offline_receipt.py`](examples/04_offline_receipt.py)
+for Solana. On EVM the two roles use different envelopes over the same
+key: x402 payments sign an EIP-712 typed message (EIP-3009), while
+receipts sign a simpler EIP-191 personal message. See
+[`examples/04_offline_receipt.py`](examples/04_offline_receipt.py)
 for an end-to-end, network-free demo.
 
 ## Protocol
