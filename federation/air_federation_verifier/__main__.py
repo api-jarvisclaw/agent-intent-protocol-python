@@ -65,7 +65,12 @@ def main(argv: list[str] | None = None) -> int:
         chain_report = verify_settlement(settlement, endpoint=args.endpoint)
         out["settlement"] = chain_report.as_dict()
         # A chain check only lowers the verdict if it actually ran and failed.
+        # Both a failed/absent transaction (confirmed is False) and a
+        # transaction that does not match the stated amount/asset/pay_to
+        # (matched is False) invalidate the receipt.
         if chain_report.checked and chain_report.confirmed is False:
+            ok = False
+        if chain_report.checked and chain_report.matched is False:
             ok = False
 
     out["ok"] = ok

@@ -184,6 +184,7 @@ verification; the authoritative source is the chain itself.
 | `network` | string | yes | Chain identifier, e.g. `eip155:8453` (Base) or `solana:mainnet`. |
 | `amount` | string | yes | Amount settled, in the asset's smallest unit, as a decimal string. |
 | `asset` | string | yes | Asset contract address or mint. |
+| `pay_to` | string | no | Address the payment was made to. When present, a verifier confirms an on-chain transfer of `amount` of `asset` to this address. |
 | `facilitator` | string | no | Facilitator that settled the payment. |
 | `timestamp` | string | no | ISO 8601 settlement time. |
 
