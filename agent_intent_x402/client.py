@@ -1,13 +1,20 @@
-"""Agent Intent Protocol client.
+"""Agent Intent client with built-in x402 payment.
 
-Declare an intent, discover the optimal provider. The client speaks the
-AIP wire protocol served by the gateway (default: https://api.jarvisclaw.ai).
+Declare an intent, discover a provider, and pay for the request on-chain
+over the open `x402 <https://x402.org>`_ protocol. When the client is
+given a :class:`~agent_intent_x402.wallet.Wallet`, any HTTP 402 challenge
+is answered automatically: the wallet signs the payment and the request
+is retried with a ``PAYMENT-SIGNATURE`` header — no accounts, no API keys.
+
+The client is vendor-neutral. ``endpoint`` defaults to a hosted gateway
+for convenience but can point at any compliant x402 service.
 
 Example::
 
-    from agent_intent_protocol import AIPClient, IntentType, OptimizeFor
+    from agent_intent_x402 import AIPClient, IntentType, OptimizeFor, Wallet
 
-    client = AIPClient(api_key="sk-...")
+    wallet = Wallet(private_key="0x...")
+    client = AIPClient(wallet=wallet)
     result = client.resolve(
         IntentType.CHAT_COMPLETION,
         constraints={"max_price_usd": 0.01},
@@ -36,9 +43,10 @@ from .models import (
     Provider,
     ResolveResult,
 )
+from .wallet import Wallet
 
 DEFAULT_ENDPOINT = "https://api.jarvisclaw.ai"
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 _ConstraintsArg = Union[Constraints, dict[str, Any], None]
 _PreferencesArg = Union[Preferences, dict[str, Any], None]
@@ -65,13 +73,17 @@ def _coerce_preferences(value: _PreferencesArg) -> dict[str, Any]:
 
 
 class AIPClient:
-    """Synchronous client for the Agent Intent Protocol.
+    """Synchronous client with built-in x402 payment.
 
     Args:
-        api_key: Bearer token for authenticated endpoints. Falls back to the
-            ``JARVISCLAW_API_KEY`` environment variable when not provided.
-        endpoint: Base URL of the AIP gateway. Defaults to the JarvisClaw
-            platform; override to target a self-hosted deployment.
+        api_key: Optional bearer token for gateways that still use API-key
+            auth. Falls back to the ``JARVISCLAW_API_KEY`` environment
+            variable. Not required when paying with a wallet.
+        wallet: A :class:`~agent_intent_x402.wallet.Wallet`. When set, HTTP
+            402 responses are answered automatically by signing the payment
+            and retrying with a ``PAYMENT-SIGNATURE`` header.
+        endpoint: Base URL of the gateway. Defaults to a hosted service;
+            override to target any compliant x402 deployment.
         timeout: Request timeout in seconds.
         http_client: Optional preconfigured ``httpx.Client`` (for custom
             transports, proxies, or connection pooling).
@@ -81,11 +93,13 @@ class AIPClient:
         self,
         api_key: Optional[str] = None,
         *,
+        wallet: Optional[Wallet] = None,
         endpoint: str = DEFAULT_ENDPOINT,
         timeout: float = 30.0,
         http_client: Optional[httpx.Client] = None,
     ) -> None:
         self.api_key = api_key or os.getenv("JARVISCLAW_API_KEY")
+        self.wallet = wallet
         self.endpoint = endpoint.rstrip("/")
         self._owns_client = http_client is None
         self._http = http_client or httpx.Client(timeout=timeout)
@@ -106,7 +120,7 @@ class AIPClient:
     def _headers(self) -> dict[str, str]:
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": f"agent-intent-protocol-python/{__version__}",
+            "User-Agent": f"agent-intent-x402/{__version__}",
         }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -128,6 +142,12 @@ class AIPClient:
         except httpx.RequestError as exc:
             raise AIPConnectionError(f"request to {url} failed: {exc}") from exc
 
+        # x402: answer a payment challenge by signing it and retrying once.
+        if resp.status_code == 402 and self.wallet is not None:
+            resp = self._pay_and_retry(
+                resp, method, url, json=json, params=params
+            )
+
         if resp.status_code >= 400:
             self._raise_for_status(resp)
 
@@ -141,6 +161,35 @@ class AIPClient:
                 status_code=resp.status_code,
                 body=resp.text,
             ) from exc
+
+    def _pay_and_retry(
+        self,
+        resp: httpx.Response,
+        method: str,
+        url: str,
+        *,
+        json: Optional[dict[str, Any]],
+        params: Optional[dict[str, Any]],
+    ) -> httpx.Response:
+        """Sign the 402 challenge and retry the request once.
+
+        Returns the retried response, or the original 402 response if the
+        challenge body could not be parsed (so normal error handling runs).
+        """
+        try:
+            challenge = resp.json()
+        except ValueError:
+            return resp
+
+        signature = self.wallet.sign_challenge(challenge)
+        headers = self._headers()
+        headers["PAYMENT-SIGNATURE"] = signature
+        try:
+            return self._http.request(
+                method, url, json=json, params=params, headers=headers
+            )
+        except httpx.RequestError as exc:
+            raise AIPConnectionError(f"request to {url} failed: {exc}") from exc
 
     @staticmethod
     def _raise_for_status(resp: httpx.Response) -> None:

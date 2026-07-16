@@ -1,10 +1,15 @@
-"""Agent Intent Protocol — Python SDK.
+"""agent-intent-x402 — pay-per-request access for AI agents over x402.
 
-Declare an intent, let the protocol route it to the optimal provider.
+Declare *what* you want, discover *who* provides it, and pay for the
+request on-chain with a single signature — no accounts, no API keys, no
+platform lock-in. Payment speaks the open `x402 <https://x402.org>`_
+protocol, so the same client works against any compliant gateway.
 
-    from agent_intent_protocol import AIPClient, IntentType
+    from agent_intent_x402 import AIPClient, IntentType, Wallet
 
-    with AIPClient(api_key="sk-...") as client:
+    # A wallet lets the client answer HTTP 402 challenges automatically.
+    wallet = Wallet(private_key="0x...")
+    with AIPClient(wallet=wallet) as client:
         result = client.resolve(IntentType.CHAT_COMPLETION)
         print(result.best_match.provider_id)
 """
@@ -27,12 +32,15 @@ from .models import (
     Provider,
     ResolveResult,
 )
+from .wallet import Wallet, WalletError
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "AIPClient",
     "DEFAULT_ENDPOINT",
+    "Wallet",
+    "WalletError",
     "AIPError",
     "AIPAPIError",
     "AIPAuthError",

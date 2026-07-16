@@ -4,7 +4,7 @@ name: Release
 #
 # Setup: add a repository secret named PYPI_API_TOKEN
 #   (Settings -> Secrets and variables -> Actions -> New repository secret)
-#   Value: a PyPI API token scoped to the `agent-intent-protocol` project.
+#   Value: a PyPI API token scoped to the `agent-intent-x402` project.
 
 on:
   push:
