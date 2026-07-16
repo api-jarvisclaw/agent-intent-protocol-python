@@ -15,6 +15,7 @@ protocol, so the same client works against any compliant gateway.
 """
 
 from .client import DEFAULT_ENDPOINT, AIPClient
+from .client_async import AsyncAIPClient
 from .errors import (
     AIPAPIError,
     AIPAuthError,
@@ -32,12 +33,27 @@ from .models import (
     Provider,
     ResolveResult,
 )
+from .receipt import (
+    ALG_EVM,
+    ALG_SOLANA,
+    RECEIPT_VERSION,
+    EvmSigner,
+    SolanaSigner,
+    VerificationResult,
+    build_receipt,
+    canonicalize,
+    hash_object,
+    sign_receipt,
+    supported_algorithms,
+    verify_receipt,
+)
 from .wallet import Wallet, WalletError
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "AIPClient",
+    "AsyncAIPClient",
     "DEFAULT_ENDPOINT",
     "Wallet",
     "WalletError",
@@ -54,4 +70,17 @@ __all__ = [
     "Match",
     "ResolveResult",
     "Provider",
+    # AIR/1 signed settlement receipts
+    "RECEIPT_VERSION",
+    "ALG_EVM",
+    "ALG_SOLANA",
+    "EvmSigner",
+    "SolanaSigner",
+    "VerificationResult",
+    "build_receipt",
+    "sign_receipt",
+    "verify_receipt",
+    "canonicalize",
+    "hash_object",
+    "supported_algorithms",
 ]

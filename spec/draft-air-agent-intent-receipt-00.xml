@@ -1,0 +1,587 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE rfc [
+  <!ENTITY nbsp "&#160;">
+  <!ENTITY zwsp "&#8203;">
+  <!ENTITY nbhy "&#8209;">
+  <!ENTITY wj "&#8288;">
+]>
+<rfc xmlns:xi="http://www.w3.org/2001/XInclude"
+     ipr="trust200902"
+     docName="draft-air-agent-intent-receipt-00"
+     category="std"
+     submissionType="IETF"
+     consensus="true"
+     version="3"
+     obsoletes=""
+     updates=""
+     xml:lang="en">
+
+  <front>
+    <title abbrev="Agent Intent Receipt">AIR/1: Offline-Verifiable Agent Intent Receipts over x402</title>
+    <seriesInfo name="Internet-Draft" value="draft-air-agent-intent-receipt-00"/>
+
+    <author fullname="AIR Editors" role="editor">
+      <organization>Independent</organization>
+      <address>
+        <email>spec@example.org</email>
+      </address>
+    </author>
+
+    <date/>
+
+    <area>Applications and Real-Time</area>
+    <keyword>agent</keyword>
+    <keyword>receipt</keyword>
+    <keyword>x402</keyword>
+    <keyword>payment</keyword>
+    <keyword>offline verification</keyword>
+
+    <abstract>
+      <t>An Agent Intent Receipt (AIR) is a self-certifying record that an HTTP
+      request was fulfilled by a named provider and paid for on-chain over the
+      x402 payment protocol. A receipt can be verified offline, by any party,
+      without trusting the party that issued it and without access to the
+      issuer's systems. This document defines the AIR/1 object model, its
+      canonical JSON serialization, its extensible signature-suite framework,
+      the verification procedure, and the associated IANA registry. Two initial
+      signature suites are defined, one for secp256k1/EVM signers and one for
+      Ed25519/Solana signers.</t>
+    </abstract>
+  </front>
+
+  <middle>
+
+    <section anchor="introduction" numbered="true">
+      <name>Introduction</name>
+      <t>The x402 protocol <xref target="x402"/> lets a client pay for a single
+      HTTP request on-chain with no account and no API key: the server answers
+      an unpaid request with HTTP 402 (Payment Required), the client returns a
+      payment authorization, and the server serves the result once settlement is
+      arranged. After settlement the client holds a result, but nothing that
+      independently proves <em>what was requested</em>, <em>who fulfilled
+      it</em>, and <em>that payment occurred</em>.</t>
+
+      <t>This document defines the Agent Intent Receipt, version 1 (AIR/1): a
+      compact, signed JSON object that binds those three facts together so a
+      third party (an auditor, a marketplace, or a dispute resolver) can check
+      them after the fact, offline, with no access to the issuer.</t>
+
+      <t>AIR/1 is transport- and platform-neutral. It does not depend on any
+      particular gateway, facilitator, or chain beyond the abstractions defined
+      here.</t>
+
+      <section anchor="requirements-language" numbered="true">
+        <name>Requirements Language</name>
+        <t>
+          The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+          "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+          "OPTIONAL" in this document are to be interpreted as described in
+          BCP&nbsp;14 <xref target="RFC2119"/> <xref target="RFC8174"/> when, and
+          only when, they appear in all capitals, as shown here.
+        </t>
+      </section>
+
+      <section anchor="terminology" numbered="true">
+        <name>Terminology</name>
+        <dl>
+          <dt>Payer:</dt>
+          <dd>The party that authorizes and funds the on-chain payment for a
+          request.</dd>
+          <dt>Facilitator:</dt>
+          <dd>The party that submits the payment on-chain and produces a
+          settlement transaction. In x402 this is typically a third-party
+          settlement service.</dd>
+          <dt>Issuer:</dt>
+          <dd>The provider or gateway that fulfills the request and signs the
+          receipt. The issuer's cryptographic identity is carried in the
+          signature block (<xref target="signature"/>).</dd>
+          <dt>Verifier:</dt>
+          <dd>Any party that checks a receipt. A verifier needs only public
+          information.</dd>
+          <dt>Receipt:</dt>
+          <dd>An AIR/1 object as defined in <xref target="receipt-object"/>.</dd>
+        </dl>
+      </section>
+    </section>
+
+    <section anchor="trust-model" numbered="true">
+      <name>Trust Model</name>
+      <t>AIR/1 is trust-minimizing: three independent parties back three
+      independent facts, and no single party can forge the whole receipt.</t>
+
+      <table anchor="trust-table">
+        <name>Facts, backers, and how a verifier checks each</name>
+        <thead>
+          <tr><th>Fact</th><th>Backed by</th><th>How a verifier checks it</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Payment happened</td>
+            <td>Facilitator, on-chain</td>
+            <td>Look up <tt>settlement.tx_hash</tt> on the named chain</td>
+          </tr>
+          <tr>
+            <td>Intent and result are untampered</td>
+            <td>SHA-256 hashes</td>
+            <td>Recompute <tt>intent_hash</tt> / <tt>result_hash</tt>
+            (<xref target="canonical"/>)</td>
+          </tr>
+          <tr>
+            <td>This receipt was issued by X</td>
+            <td>Issuer's signature</td>
+            <td>Verify <tt>signature.value</tt> against <tt>signature.signer</tt>
+            (<xref target="verification"/>)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <t>The facilitator holds its own settlement key and lands the payment
+      on-chain; the receipt never needs that key. The issuer signs the whole
+      receipt with its own key, identified by <tt>signature.signer</tt>. The
+      facilitator and the issuer are distinct roles and are generally distinct
+      entities.</t>
+
+      <t>The payment authorization signed by the payer (for example, an EIP-3009
+      <xref target="EIP-3009"/> <tt>transferWithAuthorization</tt> over EIP-712
+      <xref target="EIP-712"/>) is a separate signature, by a separate key, over
+      a separate payload, and is out of scope for this document. AIR/1 attests
+      to fulfillment, not to the payment authorization. Implementations
+      <bcp14>MUST NOT</bcp14> reuse the payer's payment-authorization signature
+      as the receipt signature.</t>
+    </section>
+
+    <section anchor="receipt-object" numbered="true">
+      <name>Receipt Object</name>
+      <t>An unsigned receipt is a JSON object <xref target="RFC8259"/> with the
+      following members.</t>
+
+      <table anchor="receipt-fields">
+        <name>AIR/1 receipt members</name>
+        <thead>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><tt>version</tt></td><td>string</td><td>yes</td><td>Format version. MUST be <tt>"AIR/1"</tt>.</td></tr>
+          <tr><td><tt>issued_at</tt></td><td>string</td><td>yes</td><td>ISO 8601 UTC instant, <tt>YYYY-MM-DDTHH:MM:SSZ</tt>.</td></tr>
+          <tr><td><tt>provider_used</tt></td><td>string</td><td>yes</td><td>Identifier of the provider that fulfilled the intent.</td></tr>
+          <tr><td><tt>intent_hash</tt></td><td>string</td><td>yes</td><td>Lowercase SHA-256 hex digest of the canonical intent (<xref target="canonical"/>).</td></tr>
+          <tr><td><tt>result_hash</tt></td><td>string</td><td>yes</td><td>Lowercase SHA-256 hex digest of the canonical result (<xref target="canonical"/>).</td></tr>
+          <tr><td><tt>settlement</tt></td><td>object</td><td>yes</td><td>On-chain settlement facts (<xref target="settlement-object"/>).</td></tr>
+          <tr><td><tt>issuer</tt></td><td>string</td><td>no</td><td>Human-readable name of the issuing service. The cryptographic identity is <tt>signature.signer</tt>.</td></tr>
+          <tr><td><tt>signature</tt></td><td>object</td><td>after signing</td><td>Issuer signature block (<xref target="signature"/>).</td></tr>
+        </tbody>
+      </table>
+
+      <t>Implementations <bcp14>MAY</bcp14> include additional top-level members.
+      A verifier <bcp14>MUST</bcp14> preserve unknown members verbatim; unknown
+      members are covered by the signature (<xref target="signature"/>).</t>
+
+      <section anchor="settlement-object" numbered="true">
+        <name>The settlement Object</name>
+        <t><tt>settlement</tt> records what happened on-chain. Its members are
+        informational for verification; the authoritative source is the chain
+        itself.</t>
+        <table anchor="settlement-fields">
+          <name>settlement members</name>
+          <thead>
+            <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><tt>tx_hash</tt></td><td>string</td><td>yes</td><td>Settlement transaction hash. To be confirmed on-chain.</td></tr>
+            <tr><td><tt>network</tt></td><td>string</td><td>yes</td><td>Chain identifier, e.g. <tt>eip155:8453</tt> (Base) or <tt>solana:mainnet</tt>.</td></tr>
+            <tr><td><tt>amount</tt></td><td>string</td><td>yes</td><td>Amount settled, in the asset's smallest unit, as a decimal string.</td></tr>
+            <tr><td><tt>asset</tt></td><td>string</td><td>yes</td><td>Asset contract address or mint.</td></tr>
+            <tr><td><tt>facilitator</tt></td><td>string</td><td>no</td><td>Identifier of the facilitator that settled the payment.</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </section>
+
+    <section anchor="canonical" numbered="true">
+      <name>Canonical Serialization and Hashing</name>
+      <t>Hashes and signatures are computed over a canonical byte encoding so
+      that independent implementations agree. The canonical form of a value is
+      produced by the following rules, applied recursively. These rules are
+      compatible with JCS <xref target="RFC8785"/> for the value subset used by
+      this specification.</t>
+      <ol>
+        <li>Object member names are sorted in ascending order by Unicode code
+        point.</li>
+        <li>No insignificant whitespace is emitted. The value separator is
+        U+002C (<tt>,</tt>) and the name/value separator is U+003A
+        (<tt>:</tt>).</li>
+        <li>Output is UTF-8. Characters outside the ASCII range are emitted
+        literally and <bcp14>MUST NOT</bcp14> be <tt>\u</tt>-escaped, except
+        where JSON string escaping is required by <xref target="RFC8259"/>.</li>
+        <li>A number whose value is an integer (for example <tt>500.0</tt>) is
+        emitted without a fractional part or exponent (<tt>500</tt>). Other
+        numbers are emitted in their shortest round-tripping decimal form. See
+        the number-precision caveat in <xref target="security"/>.</li>
+        <li>The literals <tt>true</tt>, <tt>false</tt>, and <tt>null</tt> are
+        emitted as-is.</li>
+      </ol>
+      <t>The <tt>intent_hash</tt> is the lowercase hex SHA-256
+      <xref target="RFC6234"/> <xref target="SHS"/> digest of the canonical
+      encoding of the intent object. The <tt>result_hash</tt> is computed the
+      same way over the result object.</t>
+    </section>
+
+    <section anchor="signature" numbered="true">
+      <name>Signature Block</name>
+      <t>A signed receipt carries a <tt>signature</tt> object with these
+      members.</t>
+      <table anchor="signature-fields">
+        <name>signature members</name>
+        <thead>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><tt>algorithm</tt></td><td>string</td><td>yes</td><td>Signature-suite identifier from the AIR Signature Suites registry (<xref target="iana"/>).</td></tr>
+          <tr><td><tt>signer</tt></td><td>string</td><td>yes</td><td>The issuer's public identity, encoded as the suite defines.</td></tr>
+          <tr><td><tt>value</tt></td><td>string</td><td>yes</td><td>The signature, encoded as the suite defines.</td></tr>
+        </tbody>
+      </table>
+
+      <section anchor="signable" numbered="true">
+        <name>Signable Bytes</name>
+        <t>The signable bytes are the canonical encoding (<xref target="canonical"/>)
+        of the receipt object with the <tt>signature</tt> member removed and all
+        other members, known and unknown, included. Signing the canonical whole
+        object, rather than a subset or a delimiter-joined string, is mandatory
+        (<xref target="security"/>).</t>
+      </section>
+
+      <section anchor="suite-eip191" numbered="true">
+        <name>secp256k1-eip191</name>
+        <t>The signable bytes (<xref target="signable"/>) are signed as an
+        EIP-191 <xref target="EIP-191"/> personal message: the signer prepends
+        the string <tt>"\x19Ethereum Signed Message:\n" || len(message)</tt> and
+        signs the Keccak-256 digest of that concatenation using secp256k1 ECDSA
+        <xref target="SEC2"/>. The leading <tt>0x19</tt> byte provides domain
+        separation so the signed bytes cannot also be a valid Ethereum
+        transaction. <tt>signer</tt> is the Ethereum address. A verifier recovers
+        the address from the signature and compares it to <tt>signer</tt>
+        case-insensitively.</t>
+        <t>This suite reuses the key and signing primitive an EVM wallet already
+        has, so no new key material is introduced for receipts.</t>
+      </section>
+
+      <section anchor="suite-ed25519" numbered="true">
+        <name>ed25519</name>
+        <t>The signable bytes are signed directly with an Ed25519
+        <xref target="RFC8032"/> secret key, with no additional envelope.
+        <tt>signer</tt> is the base58 encoding of the 32-byte public key;
+        <tt>value</tt> is the base64 <xref target="RFC4648"/> of the 64-byte
+        detached signature. This is the native signature scheme on Solana.</t>
+      </section>
+    </section>
+
+    <section anchor="verification" numbered="true">
+      <name>Verification</name>
+      <t>Given a receipt, a verifier:</t>
+      <ol>
+        <li>Checks that <tt>version</tt> equals <tt>"AIR/1"</tt>.</li>
+        <li>Selects the suite for <tt>signature.algorithm</tt>. An unrecognized
+        algorithm, or a missing <tt>value</tt> or <tt>signer</tt>, makes the
+        signature invalid.</li>
+        <li>Reconstructs the signable bytes (<xref target="signable"/>) and
+        verifies <tt>signature.value</tt> against <tt>signature.signer</tt> using
+        the selected suite.</li>
+        <li>If the original intent is available, recomputes <tt>intent_hash</tt>
+        and compares.</li>
+        <li>If the original result is available, recomputes <tt>result_hash</tt>
+        and compares.</li>
+        <li>Optionally pins the issuer by requiring <tt>signature.signer</tt> to
+        equal an expected value (case-insensitively for EVM addresses).</li>
+      </ol>
+      <t>A receipt is valid when the signature verifies, the version is
+      <tt>"AIR/1"</tt>, the signer matches any configured pin, and no supplied
+      hash mismatches. Hash checks that the caller does not supply are skipped,
+      not failed.</t>
+      <t>Confirming the payment itself is out of scope for receipt verification.
+      A verifier that requires proof of payment <bcp14>MUST</bcp14> look up
+      <tt>settlement.tx_hash</tt> on the named chain and confirm the amount,
+      asset, and recipient. AIR/1 attests that the issuer <em>asserts</em> a
+      given settlement; the chain is authoritative on whether it happened.</t>
+    </section>
+
+    <section anchor="example" numbered="true">
+      <name>Example</name>
+      <t>A signed EVM receipt (whitespace added for readability; the signed
+      bytes use the canonical form of <xref target="canonical"/>):</t>
+      <sourcecode type="json"><![CDATA[
+{
+  "version": "AIR/1",
+  "issued_at": "2026-07-16T09:30:00Z",
+  "provider_used": "gpt-4o-mini@example-provider",
+  "intent_hash": "b5d4045c3f466fa9...e716e0a1e2789df78",
+  "result_hash": "9f86d081884c7d65...d15d6c15b0f00a08",
+  "settlement": {
+    "tx_hash": "0xabc123...",
+    "network": "eip155:8453",
+    "amount": "2000",
+    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "facilitator": "https://x402.org/facilitator"
+  },
+  "issuer": "example-gateway",
+  "signature": {
+    "algorithm": "secp256k1-eip191",
+    "signer": "0x84fA83f3627c7C7e8d...",
+    "value": "0x1c9a...ab"
+  }
+}
+]]></sourcecode>
+    </section>
+
+    <section anchor="iana" numbered="true">
+      <name>IANA Considerations</name>
+      <t>This document requests that IANA create a new registry as described
+      below.</t>
+
+      <section anchor="iana-registry" numbered="true">
+        <name>AIR Signature Suites Registry</name>
+        <t>IANA is requested to create the "AIR Signature Suites" registry. The
+        registry governs the values of the <tt>algorithm</tt> member of the
+        AIR/1 signature object (<xref target="signature"/>).</t>
+        <t>The registration policy is Specification Required
+        <xref target="RFC8126"/>. Each entry contains:</t>
+        <dl>
+          <dt>Algorithm:</dt>
+          <dd>The string value used in <tt>signature.algorithm</tt>. Values
+          <bcp14>MUST</bcp14> match the ABNF <tt>1*( %x21-7E )</tt> (printable
+          US-ASCII, no spaces) and are compared as exact, case-sensitive byte
+          strings.</dd>
+          <dt>Description:</dt>
+          <dd>A short human-readable description.</dd>
+          <dt>Signer Identity Encoding:</dt>
+          <dd>How <tt>signature.signer</tt> is encoded for this suite.</dd>
+          <dt>Signature Encoding:</dt>
+          <dd>How <tt>signature.value</tt> is encoded for this suite.</dd>
+          <dt>Reference:</dt>
+          <dd>A stable reference to the defining specification.</dd>
+        </dl>
+        <t>The initial contents of the registry are:</t>
+        <table anchor="iana-initial">
+          <name>Initial AIR Signature Suites</name>
+          <thead>
+            <tr><th>Algorithm</th><th>Description</th><th>Signer Identity Encoding</th><th>Signature Encoding</th><th>Reference</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><tt>secp256k1-eip191</tt></td>
+              <td>secp256k1 ECDSA with EIP-191 personal-message envelope</td>
+              <td><tt>0x</tt> Ethereum address</td>
+              <td><tt>0x</tt> hex, 65 bytes r||s||v</td>
+              <td>RFC-THIS, <xref target="suite-eip191"/></td>
+            </tr>
+            <tr>
+              <td><tt>ed25519</tt></td>
+              <td>Ed25519 EdDSA, no envelope</td>
+              <td>base58 32-byte public key</td>
+              <td>base64 64-byte signature</td>
+              <td>RFC-THIS, <xref target="suite-ed25519"/></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </section>
+
+    <section anchor="security" numbered="true">
+      <name>Security Considerations</name>
+      <t>Sign the whole object. An implementation <bcp14>MUST NOT</bcp14> sign a
+      subset of fields or a delimiter-joined string; doing so invites
+      field-injection and cross-field ambiguity. <xref target="signable"/> signs
+      the canonical whole, which is the only supported mode.</t>
+
+      <t>The receipt is not proof of payment. A valid signature proves only that
+      the issuer <em>asserts</em> a settlement. For value-bearing decisions a
+      verifier <bcp14>MUST</bcp14> confirm <tt>settlement.tx_hash</tt> on-chain,
+      as described in <xref target="verification"/>.</t>
+
+      <t>Pin the issuer. An unpinned valid signature says only that <em>some</em>
+      holder of <em>some</em> key signed the receipt. A verifier that knows who
+      should have signed <bcp14>MUST</bcp14> pin <tt>signature.signer</tt> to the
+      expected identity.</t>
+
+      <t>Canonicalization is load-bearing. Two encoders that disagree on number
+      normalization, member ordering, or string escaping will disagree on hashes
+      and signatures. Implementations <bcp14>MUST</bcp14> follow
+      <xref target="canonical"/> exactly. The number normalization in
+      <xref target="canonical"/> assumes intent and result payloads carry no
+      numbers that require more precision than an integer-valued float can
+      represent; producers <bcp14>SHOULD</bcp14> encode high-precision or
+      large-magnitude quantities as strings.</t>
+
+      <t>Key separation. The issuer's receipt-signing key <bcp14>SHOULD</bcp14>
+      be distinct in role from any payment key. Even where the same curve is
+      used (for example secp256k1 on EVM), the payment authorization and the
+      receipt use different envelopes and different payloads and
+      <bcp14>MUST NOT</bcp14> be conflated (<xref target="trust-model"/>).</t>
+
+      <t>Replay and freshness. AIR/1 does not itself prevent a receipt from being
+      presented more than once. <tt>issued_at</tt> and the on-chain uniqueness of
+      <tt>settlement.tx_hash</tt> give a verifier the means to detect duplicates;
+      applications that require single-use semantics <bcp14>MUST</bcp14> enforce
+      them out of band.</t>
+
+      <t>Algorithm agility and downgrade. Because the suite is named in the
+      receipt, a verifier <bcp14>MUST</bcp14> fail closed on unrecognized suites
+      and <bcp14>MUST NOT</bcp14> silently accept a weaker suite than a policy
+      requires.</t>
+    </section>
+
+  </middle>
+
+  <back>
+    <references>
+      <name>Normative References</name>
+      <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.2119.xml"/>
+      <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.8174.xml"/>
+      <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.4648.xml"/>
+      <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.8259.xml"/>
+      <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.6234.xml"/>
+      <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.8126.xml"/>
+      <reference anchor="SHS" target="https://csrc.nist.gov/publications/detail/fips/180/4/final">
+        <front>
+          <title>Secure Hash Standard (SHS)</title>
+          <author>
+            <organization>National Institute of Standards and Technology</organization>
+          </author>
+          <date year="2015" month="August"/>
+        </front>
+        <seriesInfo name="FIPS" value="180-4"/>
+      </reference>
+    </references>
+
+    <references>
+      <name>Informative References</name>
+      <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.8785.xml"/>
+      <xi:include href="https://bib.ietf.org/public/rfc/bibxml/reference.RFC.8032.xml"/>
+      <reference anchor="x402" target="https://x402.org">
+        <front>
+          <title>x402: An HTTP-native payment protocol</title>
+          <author><organization>x402</organization></author>
+          <date year="2025"/>
+        </front>
+      </reference>
+      <reference anchor="EIP-191" target="https://eips.ethereum.org/EIPS/eip-191">
+        <front>
+          <title>EIP-191: Signed Data Standard</title>
+          <author initials="M." surname="Swende"><organization/></author>
+          <author initials="N." surname="Johnson"><organization/></author>
+          <date year="2016"/>
+        </front>
+      </reference>
+      <reference anchor="EIP-712" target="https://eips.ethereum.org/EIPS/eip-712">
+        <front>
+          <title>EIP-712: Typed structured data hashing and signing</title>
+          <author initials="R." surname="Belchior"><organization/></author>
+          <author initials="L." surname="Logvinov"><organization/></author>
+          <date year="2017"/>
+        </front>
+      </reference>
+      <reference anchor="EIP-3009" target="https://eips.ethereum.org/EIPS/eip-3009">
+        <front>
+          <title>EIP-3009: Transfer With Authorization</title>
+          <author initials="P." surname="Gao"><organization/></author>
+          <author initials="D." surname="Mohsen"><organization/></author>
+          <date year="2020"/>
+        </front>
+      </reference>
+      <reference anchor="SEC2" target="https://www.secg.org/sec2-v2.pdf">
+        <front>
+          <title>SEC 2: Recommended Elliptic Curve Domain Parameters</title>
+          <author><organization>Standards for Efficient Cryptography Group</organization></author>
+          <date year="2010"/>
+        </front>
+      </reference>
+    </references>
+
+    <section anchor="test-vectors" numbered="true">
+      <name>Test Vectors</name>
+      <t>This appendix provides deterministic golden test vectors. Any
+      conforming implementation MUST reproduce the exact hash and canonical
+      byte values below from the given inputs, and MUST produce byte-identical
+      signatures given the listed test keys. The keys here are well-known test
+      keys and MUST NOT be used on a live chain.</t>
+
+      <section anchor="tv-inputs" numbered="true">
+        <name>Inputs</name>
+        <t>Intent object (hashed to <tt>intent_hash</tt>):</t>
+        <artwork>{
+  "action": "search",
+  "query": "cheapest flight SFO-&gt;NRT",
+  "constraints": {
+    "max_price_usd": 900,
+    "nonstop": true
+  }
+}</artwork>
+        <t>Result object (hashed to <tt>result_hash</tt>):</t>
+        <artwork>{
+  "provider": "acme-search",
+  "answers": [
+    {
+      "price_usd": 812
+    }
+  ]
+}</artwork>
+        <t>Settlement object embedded in the receipt:</t>
+        <artwork>{
+  "tx_hash": "0x58f1c0000000000000000000000000000000000000000000000000000000abcd",
+  "amount": "0.05",
+  "currency": "USDC",
+  "chain": "base",
+  "facilitator": "facilitator.example",
+  "timestamp": "2026-07-16T00:00:00Z"
+}</artwork>
+        <t>Fixed metadata: <tt>issued_at</tt> = "2026-07-16T00:00:00Z",
+        <tt>issuer</tt> = "issuer.example".</t>
+        <t>Test keys (test-only, never used on a live chain):</t>
+        <artwork>secp256k1 private key: 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+ed25519 seed (hex):    000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f</artwork>
+      </section>
+
+      <section anchor="tv-hashes" numbered="true">
+        <name>Computed Hashes</name>
+        <artwork>intent_hash = e89e9e4315f34c58f639eb47b4bb627c1565fd39a8475c3b7fd9dab731feffb8
+result_hash = 262c92c42f58d42d907971cab83a15de0232cffbdd96461a464bf2c07fc20776</artwork>
+      </section>
+
+      <section anchor="tv-evm" numbered="true">
+        <name>secp256k1-eip191 (Base) Vector</name>
+        <t>Signer address: <tt>0x70997970C51812dc3A010C7d01b50e0d17dc79C8</tt></t>
+        <t>Canonical signable bytes (UTF-8), the exact string that is hashed
+        and signed:</t>
+        <artwork>{"intent_hash":"e89e9e4315f34c58f639eb47b4bb627c1565fd39a8475c3b7fd9dab731feffb8","issued_at":"2026-07-16T00:00:00Z","issuer":"issuer.example","provider_used":"acme-search","result_hash":"262c92c42f58d42d907971cab83a15de0232cffbdd96461a464bf2c07fc20776","settlement":{"amount":"0.05","chain":"base","currency":"USDC","facilitator":"facilitator.example","timestamp":"2026-07-16T00:00:00Z","tx_hash":"0x58f1c0000000000000000000000000000000000000000000000000000000abcd"},"signature":{"algorithm":"secp256k1-eip191","signer":"0x70997970C51812dc3A010C7d01b50e0d17dc79C8"},"version":"AIR/1"}</artwork>
+        <t>Signature (base64): <tt>EwCqgPNvVSjPtby8BMtxLLo+i0q7cc4TT4ScANVn1lBOTw263W1ntIcYNhq19k4MrLWgWHzY4pfr6ap/lcfwuhw=</tt></t>
+        <t>Signature (hex): <tt>1300aa80f36f5528cfb5bcbc04cb712cba3e8b4abb71ce134f849c00d567d6504e4f0dbadd6d67b48718361ab5f64e0cacb5a0587cd8e297ebe9aa7f95c7f0ba1c</tt></t>
+      </section>
+
+      <section anchor="tv-solana" numbered="true">
+        <name>ed25519 (Solana) Vector</name>
+        <t>Signer public key (base58): <tt>FAe4sisG95oZ42w7buUn5qEE4TAnfTTFPiguZUHmhiF</tt></t>
+        <t>Canonical signable bytes (UTF-8), the exact string that is signed:</t>
+        <artwork>{"intent_hash":"e89e9e4315f34c58f639eb47b4bb627c1565fd39a8475c3b7fd9dab731feffb8","issued_at":"2026-07-16T00:00:00Z","issuer":"issuer.example","provider_used":"acme-search","result_hash":"262c92c42f58d42d907971cab83a15de0232cffbdd96461a464bf2c07fc20776","settlement":{"amount":"0.05","chain":"base","currency":"USDC","facilitator":"facilitator.example","timestamp":"2026-07-16T00:00:00Z","tx_hash":"0x58f1c0000000000000000000000000000000000000000000000000000000abcd"},"signature":{"algorithm":"ed25519","signer":"FAe4sisG95oZ42w7buUn5qEE4TAnfTTFPiguZUHmhiF"},"version":"AIR/1"}</artwork>
+        <t>Signature (base64): <tt>teFQgXN6pI5Vud5E8YpvDUhej9aX4PIaAFd+oQp6Cagkq3W5OiOPPE/Yt+lod6fo6d/epeure2jCGeNJhlU9CA==</tt></t>
+        <t>Signature (hex): <tt>b5e15081737aa48e55b9de44f18a6f0d485e8fd697e0f21a00577ea10a7a09a824ab75b93a238f3c4fd8b7e96877a7e8e9dfdea5ebab7b68c219e34986553d08</tt></t>
+      </section>
+    </section>
+
+    <section anchor="reference-implementation" numbered="true">
+      <name>Reference Implementation</name>
+      <t>The <tt>agent_intent_x402.receipt</tt> module of the agent-intent-x402
+      project implements this specification: <tt>canonicalize</tt>,
+      <tt>hash_object</tt>, <tt>build_receipt</tt>, <tt>sign_receipt</tt>,
+      <tt>verify_receipt</tt>, and the <tt>secp256k1-eip191</tt> and
+      <tt>ed25519</tt> signer/verifier suites. It is provided for
+      interoperability testing and is not normative.</t>
+    </section>
+
+    <section anchor="acknowledgments" numbered="false">
+      <name>Acknowledgments</name>
+      <t>This work distills the offline-verifiable-receipt idea explored by
+      earlier agent-intent projects into a platform-neutral, x402-native
+      form.</t>
+    </section>
+  </back>
+</rfc>

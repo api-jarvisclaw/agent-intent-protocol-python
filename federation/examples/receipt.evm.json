@@ -1,0 +1,21 @@
+{
+  "version": "AIR/1",
+  "issued_at": "2026-07-16T04:34:13Z",
+  "provider_used": "acme-search",
+  "intent_hash": "e89e9e4315f34c58f639eb47b4bb627c1565fd39a8475c3b7fd9dab731feffb8",
+  "result_hash": "262c92c42f58d42d907971cab83a15de0232cffbdd96461a464bf2c07fc20776",
+  "settlement": {
+    "tx_hash": "0xabc123",
+    "amount": "0.05",
+    "currency": "USDC",
+    "chain": "base",
+    "facilitator": "facilitator.example",
+    "timestamp": "2026-07-16T00:00:00Z"
+  },
+  "issuer": "issuer.example",
+  "signature": {
+    "algorithm": "secp256k1-eip191",
+    "signer": "0x6425dcaBe4dBB9b8fFb8923620103D59C5985e72",
+    "value": "0eTk24TffOa8z6a9PLcyws+0nWB0+dDe+ZbBkSVdPPh06EgZa5P/jUv7dNErb4DX7aAebKL2QVZ5wZklCjFQ8Rs="
+  }
+}

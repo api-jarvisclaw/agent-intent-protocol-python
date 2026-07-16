@@ -18,3 +18,10 @@ env/
 .vscode/
 .idea/
 .DS_Store
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# xml2rfc build log
+spec/tracker.log

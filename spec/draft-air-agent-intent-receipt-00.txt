@@ -1,0 +1,784 @@
+
+
+
+
+Network Working Group                                    A. Editors, Ed.
+Internet-Draft                                               Independent
+Intended status: Standards Track                            16 July 2026
+Expires: 17 January 2027
+
+
+       AIR/1: Offline-Verifiable Agent Intent Receipts over x402
+                   draft-air-agent-intent-receipt-00
+
+Abstract
+
+   An Agent Intent Receipt (AIR) is a self-certifying record that an
+   HTTP request was fulfilled by a named provider and paid for on-chain
+   over the x402 payment protocol.  A receipt can be verified offline,
+   by any party, without trusting the party that issued it and without
+   access to the issuer's systems.  This document defines the AIR/1
+   object model, its canonical JSON serialization, its extensible
+   signature-suite framework, the verification procedure, and the
+   associated IANA registry.  Two initial signature suites are defined,
+   one for secp256k1/EVM signers and one for Ed25519/Solana signers.
+
+Status of This Memo
+
+   This Internet-Draft is submitted in full conformance with the
+   provisions of BCP 78 and BCP 79.
+
+   Internet-Drafts are working documents of the Internet Engineering
+   Task Force (IETF).  Note that other groups may also distribute
+   working documents as Internet-Drafts.  The list of current Internet-
+   Drafts is at https://datatracker.ietf.org/drafts/current/.
+
+   Internet-Drafts are draft documents valid for a maximum of six months
+   and may be updated, replaced, or obsoleted by other documents at any
+   time.  It is inappropriate to use Internet-Drafts as reference
+   material or to cite them other than as "work in progress."
+
+   This Internet-Draft will expire on 17 January 2027.
+
+Copyright Notice
+
+   Copyright (c) 2026 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents (https://trustee.ietf.org/
+   license-info) in effect on the date of publication of this document.
+   Please review these documents carefully, as they describe your rights
+   and restrictions with respect to this document.  Code Components
+
+
+
+Editors                  Expires 17 January 2027                [Page 1]
+
+Internet-Draft            Agent Intent Receipt                 July 2026
+
+
+   extracted from this document must include Revised BSD License text as
+   described in Section 4.e of the Trust Legal Provisions and are
+   provided without warranty as described in the Revised BSD License.
+
+Table of Contents
+
+   1.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   2
+     1.1.  Requirements Language . . . . . . . . . . . . . . . . . .   3
+     1.2.  Terminology . . . . . . . . . . . . . . . . . . . . . . .   3
+   2.  Trust Model . . . . . . . . . . . . . . . . . . . . . . . . .   3
+   3.  Receipt Object  . . . . . . . . . . . . . . . . . . . . . . .   4
+     3.1.  The settlement Object . . . . . . . . . . . . . . . . . .   5
+   4.  Canonical Serialization and Hashing . . . . . . . . . . . . .   6
+   5.  Signature Block . . . . . . . . . . . . . . . . . . . . . . .   7
+     5.1.  Signable Bytes  . . . . . . . . . . . . . . . . . . . . .   7
+     5.2.  secp256k1-eip191  . . . . . . . . . . . . . . . . . . . .   7
+     5.3.  ed25519 . . . . . . . . . . . . . . . . . . . . . . . . .   8
+   6.  Verification  . . . . . . . . . . . . . . . . . . . . . . . .   8
+   7.  Example . . . . . . . . . . . . . . . . . . . . . . . . . . .   8
+   8.  IANA Considerations . . . . . . . . . . . . . . . . . . . . .   9
+     8.1.  AIR Signature Suites Registry . . . . . . . . . . . . . .   9
+   9.  Security Considerations . . . . . . . . . . . . . . . . . . .  10
+   10. Normative References  . . . . . . . . . . . . . . . . . . . .  11
+   11. Informative References  . . . . . . . . . . . . . . . . . . .  12
+   Appendix A.  Test Vectors . . . . . . . . . . . . . . . . . . . .  12
+     A.1.  Inputs  . . . . . . . . . . . . . . . . . . . . . . . . .  12
+     A.2.  Computed Hashes . . . . . . . . . . . . . . . . . . . . .  13
+     A.3.  secp256k1-eip191 (Base) Vector  . . . . . . . . . . . . .  13
+     A.4.  ed25519 (Solana) Vector . . . . . . . . . . . . . . . . .  14
+   Appendix B.  Reference Implementation . . . . . . . . . . . . . .  14
+   Acknowledgments . . . . . . . . . . . . . . . . . . . . . . . . .  14
+   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . .  14
+
+1.  Introduction
+
+   The x402 protocol [x402] lets a client pay for a single HTTP request
+   on-chain with no account and no API key: the server answers an unpaid
+   request with HTTP 402 (Payment Required), the client returns a
+   payment authorization, and the server serves the result once
+   settlement is arranged.  After settlement the client holds a result,
+   but nothing that independently proves _what was requested_, _who
+   fulfilled it_, and _that payment occurred_.
+
+   This document defines the Agent Intent Receipt, version 1 (AIR/1): a
+   compact, signed JSON object that binds those three facts together so
+   a third party (an auditor, a marketplace, or a dispute resolver) can
+   check them after the fact, offline, with no access to the issuer.
+
+
+
+
+Editors                  Expires 17 January 2027                [Page 2]
+
+Internet-Draft            Agent Intent Receipt                 July 2026
+
+
+   AIR/1 is transport- and platform-neutral.  It does not depend on any
+   particular gateway, facilitator, or chain beyond the abstractions
+   defined here.
+
+1.1.  Requirements Language
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   BCP 14 [RFC2119] [RFC8174] when, and only when, they appear in all
+   capitals, as shown here.
+
+1.2.  Terminology
+
+   Payer:  The party that authorizes and funds the on-chain payment for
+      a request.
+
+   Facilitator:  The party that submits the payment on-chain and
+      produces a settlement transaction.  In x402 this is typically a
+      third-party settlement service.
+
+   Issuer:  The provider or gateway that fulfills the request and signs
+      the receipt.  The issuer's cryptographic identity is carried in
+      the signature block (Section 5).
+
+   Verifier:  Any party that checks a receipt.  A verifier needs only
+      public information.
+
+   Receipt:  An AIR/1 object as defined in Section 3.
+
+2.  Trust Model
+
+   AIR/1 is trust-minimizing: three independent parties back three
+   independent facts, and no single party can forge the whole receipt.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Editors                  Expires 17 January 2027                [Page 3]
+
+Internet-Draft            Agent Intent Receipt                 July 2026
+
+
+   +===================+==============+================================+
+   | Fact              | Backed by    | How a verifier checks it       |
+   +===================+==============+================================+
+   | Payment happened  | Facilitator, | Look up settlement.tx_hash     |
+   |                   | on-chain     | on the named chain             |
+   +-------------------+--------------+--------------------------------+
+   | Intent and result | SHA-256      | Recompute intent_hash /        |
+   | are untampered    | hashes       | result_hash (Section 4)        |
+   +-------------------+--------------+--------------------------------+
+   | This receipt was  | Issuer's     | Verify signature.value         |
+   | issued by X       | signature    | against signature.signer       |
+   |                   |              | (Section 6)                    |
+   +-------------------+--------------+--------------------------------+
+
+          Table 1: Facts, backers, and how a verifier checks each
+
+   The facilitator holds its own settlement key and lands the payment
+   on-chain; the receipt never needs that key.  The issuer signs the
+   whole receipt with its own key, identified by signature.signer.  The
+   facilitator and the issuer are distinct roles and are generally
+   distinct entities.
+
+   The payment authorization signed by the payer (for example, an
+   EIP-3009 [EIP-3009] transferWithAuthorization over EIP-712 [EIP-712])
+   is a separate signature, by a separate key, over a separate payload,
+   and is out of scope for this document.  AIR/1 attests to fulfillment,
+   not to the payment authorization.  Implementations MUST NOT reuse the
+   payer's payment-authorization signature as the receipt signature.
+
+3.  Receipt Object
+
+   An unsigned receipt is a JSON object [RFC8259] with the following
+   members.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Editors                  Expires 17 January 2027                [Page 4]
+
+Internet-Draft            Agent Intent Receipt                 July 2026
+
+
+     +===============+========+==========+===========================+
+     | Field         | Type   | Required | Description               |
+     +===============+========+==========+===========================+
+     | version       | string | yes      | Format version.  MUST be  |
+     |               |        |          | "AIR/1".                  |
+     +---------------+--------+----------+---------------------------+
+     | issued_at     | string | yes      | ISO 8601 UTC instant,     |
+     |               |        |          | YYYY-MM-DDTHH:MM:SSZ.     |
+     +---------------+--------+----------+---------------------------+
+     | provider_used | string | yes      | Identifier of the         |
+     |               |        |          | provider that fulfilled   |
+     |               |        |          | the intent.               |
+     +---------------+--------+----------+---------------------------+
+     | intent_hash   | string | yes      | Lowercase SHA-256 hex     |
+     |               |        |          | digest of the canonical   |
+     |               |        |          | intent (Section 4).       |
+     +---------------+--------+----------+---------------------------+
+     | result_hash   | string | yes      | Lowercase SHA-256 hex     |
+     |               |        |          | digest of the canonical   |
+     |               |        |          | result (Section 4).       |
+     +---------------+--------+----------+---------------------------+
+     | settlement    | object | yes      | On-chain settlement facts |
+     |               |        |          | (Section 3.1).            |
+     +---------------+--------+----------+---------------------------+
+     | issuer        | string | no       | Human-readable name of    |
+     |               |        |          | the issuing service.  The |
+     |               |        |          | cryptographic identity is |
+     |               |        |          | signature.signer.         |
+     +---------------+--------+----------+---------------------------+
+     | signature     | object | after    | Issuer signature block    |
+     |               |        | signing  | (Section 5).              |
+     +---------------+--------+----------+---------------------------+
+
+                       Table 2: AIR/1 receipt members
+
+   Implementations MAY include additional top-level members.  A verifier
+   MUST preserve unknown members verbatim; unknown members are covered
+   by the signature (Section 5).
+
+3.1.  The settlement Object
+
+   settlement records what happened on-chain.  Its members are
+   informational for verification; the authoritative source is the chain
+   itself.
+
+
+
+
+
+
+
+Editors                  Expires 17 January 2027                [Page 5]
+
+Internet-Draft            Agent Intent Receipt                 July 2026
+
+
+    +=============+========+==========+==============================+
+    | Field       | Type   | Required | Description                  |
+    +=============+========+==========+==============================+
+    | tx_hash     | string | yes      | Settlement transaction hash. |
+    |             |        |          | To be confirmed on-chain.    |
+    +-------------+--------+----------+------------------------------+
+    | network     | string | yes      | Chain identifier, e.g.       |
+    |             |        |          | eip155:8453 (Base) or        |
+    |             |        |          | solana:mainnet.              |
+    +-------------+--------+----------+------------------------------+
+    | amount      | string | yes      | Amount settled, in the       |
+    |             |        |          | asset's smallest unit, as a  |
+    |             |        |          | decimal string.              |
+    +-------------+--------+----------+------------------------------+
+    | asset       | string | yes      | Asset contract address or    |
+    |             |        |          | mint.                        |
+    +-------------+--------+----------+------------------------------+
+    | facilitator | string | no       | Identifier of the            |
+    |             |        |          | facilitator that settled the |
+    |             |        |          | payment.                     |
+    +-------------+--------+----------+------------------------------+
+
+                       Table 3: settlement members
+
+4.  Canonical Serialization and Hashing
+
+   Hashes and signatures are computed over a canonical byte encoding so
+   that independent implementations agree.  The canonical form of a
+   value is produced by the following rules, applied recursively.  These
+   rules are compatible with JCS [RFC8785] for the value subset used by
+   this specification.
+
+   1.  Object member names are sorted in ascending order by Unicode code
+       point.
+
+   2.  No insignificant whitespace is emitted.  The value separator is
+       U+002C (,) and the name/value separator is U+003A (:).
+
+   3.  Output is UTF-8.  Characters outside the ASCII range are emitted
+       literally and MUST NOT be \u-escaped, except where JSON string
+       escaping is required by [RFC8259].
+
+   4.  A number whose value is an integer (for example 500.0) is emitted
+       without a fractional part or exponent (500).  Other numbers are
+       emitted in their shortest round-tripping decimal form.  See the
+       number-precision caveat in Section 9.
+
+   5.  The literals true, false, and null are emitted as-is.
+
+
+
+Editors                  Expires 17 January 2027                [Page 6]
+
+Internet-Draft            Agent Intent Receipt                 July 2026
+
+
+   The intent_hash is the lowercase hex SHA-256 [RFC6234] [SHS] digest
+   of the canonical encoding of the intent object.  The result_hash is
+   computed the same way over the result object.
+
+5.  Signature Block
+
+   A signed receipt carries a signature object with these members.
+
+     +===========+========+==========+==============================+
+     | Field     | Type   | Required | Description                  |
+     +===========+========+==========+==============================+
+     | algorithm | string | yes      | Signature-suite identifier   |
+     |           |        |          | from the AIR Signature       |
+     |           |        |          | Suites registry (Section 8). |
+     +-----------+--------+----------+------------------------------+
+     | signer    | string | yes      | The issuer's public          |
+     |           |        |          | identity, encoded as the     |
+     |           |        |          | suite defines.               |
+     +-----------+--------+----------+------------------------------+
+     | value     | string | yes      | The signature, encoded as    |
+     |           |        |          | the suite defines.           |
+     +-----------+--------+----------+------------------------------+
+
+                        Table 4: signature members
+
+5.1.  Signable Bytes
+
+   The signable bytes are the canonical encoding (Section 4) of the
+   receipt object with the signature member removed and all other
+   members, known and unknown, included.  Signing the canonical whole
+   object, rather than a subset or a delimiter-joined string, is
+   mandatory (Section 9).
+
+5.2.  secp256k1-eip191
+
+   The signable bytes (Section 5.1) are signed as an EIP-191 [EIP-191]
+   personal message: the signer prepends the string "\x19Ethereum Signed
+   Message:\n" || len(message) and signs the Keccak-256 digest of that
+   concatenation using secp256k1 ECDSA [SEC2].  The leading 0x19 byte
+   provides domain separation so the signed bytes cannot also be a valid
+   Ethereum transaction. signer is the Ethereum address.  A verifier
+   recovers the address from the signature and compares it to signer
+   case-insensitively.
+
+   This suite reuses the key and signing primitive an EVM wallet already
+   has, so no new key material is introduced for receipts.
+
+
+
+
+
+Editors                  Expires 17 January 2027                [Page 7]
+
+Internet-Draft            Agent Intent Receipt                 July 2026
+
+
+5.3.  ed25519
+
+   The signable bytes are signed directly with an Ed25519 [RFC8032]
+   secret key, with no additional envelope.  signer is the base58
+   encoding of the 32-byte public key; value is the base64 [RFC4648] of
+   the 64-byte detached signature.  This is the native signature scheme
+   on Solana.
+
+6.  Verification
+
+   Given a receipt, a verifier:
+
+   1.  Checks that version equals "AIR/1".
+
+   2.  Selects the suite for signature.algorithm.  An unrecognized
+       algorithm, or a missing value or signer, makes the signature
+       invalid.
+
+   3.  Reconstructs the signable bytes (Section 5.1) and verifies
+       signature.value against signature.signer using the selected
+       suite.
+
+   4.  If the original intent is available, recomputes intent_hash and
+       compares.
+
+   5.  If the original result is available, recomputes result_hash and
+       compares.
+
+   6.  Optionally pins the issuer by requiring signature.signer to equal
+       an expected value (case-insensitively for EVM addresses).
+
+   A receipt is valid when the signature verifies, the version is
+   "AIR/1", the signer matches any configured pin, and no supplied hash
+   mismatches.  Hash checks that the caller does not supply are skipped,
+   not failed.
+
+   Confirming the payment itself is out of scope for receipt
+   verification.  A verifier that requires proof of payment MUST look up
+   settlement.tx_hash on the named chain and confirm the amount, asset,
+   and recipient.  AIR/1 attests that the issuer _asserts_ a given
+   settlement; the chain is authoritative on whether it happened.
+
+7.  Example
+
+   A signed EVM receipt (whitespace added for readability; the signed
+   bytes use the canonical form of Section 4):
+
+
+
+
+
+Editors                  Expires 17 January 2027                [Page 8]
+
+Internet-Draft            Agent Intent Receipt                 July 2026
+
+
+   {
+     "version": "AIR/1",
+     "issued_at": "2026-07-16T09:30:00Z",
+     "provider_used": "gpt-4o-mini@example-provider",
+     "intent_hash": "b5d4045c3f466fa9...e716e0a1e2789df78",
+     "result_hash": "9f86d081884c7d65...d15d6c15b0f00a08",
+     "settlement": {
+       "tx_hash": "0xabc123...",
+       "network": "eip155:8453",
+       "amount": "2000",
+       "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+       "facilitator": "https://x402.org/facilitator"
+     },
+     "issuer": "example-gateway",
+     "signature": {
+       "algorithm": "secp256k1-eip191",
+       "signer": "0x84fA83f3627c7C7e8d...",
+       "value": "0x1c9a...ab"
+     }
+   }
+
+8.  IANA Considerations
+
+   This document requests that IANA create a new registry as described
+   below.
+
+8.1.  AIR Signature Suites Registry
+
+   IANA is requested to create the "AIR Signature Suites" registry.  The
+   registry governs the values of the algorithm member of the AIR/1
+   signature object (Section 5).
+
+   The registration policy is Specification Required [RFC8126].  Each
+   entry contains:
+
+   Algorithm:  The string value used in signature.algorithm.  Values
+      MUST match the ABNF 1*( %x21-7E ) (printable US-ASCII, no spaces)
+      and are compared as exact, case-sensitive byte strings.
+
+   Description:  A short human-readable description.
+
+   Signer Identity Encoding:  How signature.signer is encoded for this
+      suite.
+
+   Signature Encoding:  How signature.value is encoded for this suite.
+
+   Reference:  A stable reference to the defining specification.
+
+
+
+
+Editors                  Expires 17 January 2027                [Page 9]
+
+Internet-Draft            Agent Intent Receipt                 July 2026
+
+
+   The initial contents of the registry are:
+
+   +==================+==================+========+=========+=========+
+   | Algorithm        | Description      |Signer  |Signature|Reference|
+   |                  |                  |Identity|Encoding |         |
+   |                  |                  |Encoding|         |         |
+   +==================+==================+========+=========+=========+
+   | secp256k1-eip191 | secp256k1 ECDSA  |0x      |0x hex,  |RFC-THIS,|
+   |                  | with EIP-191     |Ethereum|65 bytes |Section  |
+   |                  | personal-message |address |r||s||v  |5.2      |
+   |                  | envelope         |        |         |         |
+   +------------------+------------------+--------+---------+---------+
+   | ed25519          | Ed25519 EdDSA,   |base58  |base64   |RFC-THIS,|
+   |                  | no envelope      |32-byte |64-byte  |Section  |
+   |                  |                  |public  |signature|5.3      |
+   |                  |                  |key     |         |         |
+   +------------------+------------------+--------+---------+---------+
+
+                  Table 5: Initial AIR Signature Suites
+
+9.  Security Considerations
+
+   Sign the whole object.  An implementation MUST NOT sign a subset of
+   fields or a delimiter-joined string; doing so invites field-injection
+   and cross-field ambiguity.  Section 5.1 signs the canonical whole,
+   which is the only supported mode.
+
+   The receipt is not proof of payment.  A valid signature proves only
+   that the issuer _asserts_ a settlement.  For value-bearing decisions
+   a verifier MUST confirm settlement.tx_hash on-chain, as described in
+   Section 6.
+
+   Pin the issuer.  An unpinned valid signature says only that _some_
+   holder of _some_ key signed the receipt.  A verifier that knows who
+   should have signed MUST pin signature.signer to the expected
+   identity.
+
+   Canonicalization is load-bearing.  Two encoders that disagree on
+   number normalization, member ordering, or string escaping will
+   disagree on hashes and signatures.  Implementations MUST follow
+   Section 4 exactly.  The number normalization in Section 4 assumes
+   intent and result payloads carry no numbers that require more
+   precision than an integer-valued float can represent; producers
+   SHOULD encode high-precision or large-magnitude quantities as
+   strings.
+
+
+
+
+
+
+Editors                  Expires 17 January 2027               [Page 10]
+
+Internet-Draft            Agent Intent Receipt                 July 2026
+
+
+   Key separation.  The issuer's receipt-signing key SHOULD be distinct
+   in role from any payment key.  Even where the same curve is used (for
+   example secp256k1 on EVM), the payment authorization and the receipt
+   use different envelopes and different payloads and MUST NOT be
+   conflated (Section 2).
+
+   Replay and freshness.  AIR/1 does not itself prevent a receipt from
+   being presented more than once. issued_at and the on-chain uniqueness
+   of settlement.tx_hash give a verifier the means to detect duplicates;
+   applications that require single-use semantics MUST enforce them out
+   of band.
+
+   Algorithm agility and downgrade.  Because the suite is named in the
+   receipt, a verifier MUST fail closed on unrecognized suites and MUST
+   NOT silently accept a weaker suite than a policy requires.
+
+10.  Normative References
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119,
+              DOI 10.17487/RFC2119, March 1997,
+              <https://www.rfc-editor.org/info/rfc2119>.
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC
+              2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174,
+              May 2017, <https://www.rfc-editor.org/info/rfc8174>.
+
+   [RFC4648]  Josefsson, S., "The Base16, Base32, and Base64 Data
+              Encodings", RFC 4648, DOI 10.17487/RFC4648, October 2006,
+              <https://www.rfc-editor.org/info/rfc4648>.
+
+   [RFC8259]  Bray, T., Ed., "The JavaScript Object Notation (JSON) Data
+              Interchange Format", STD 90, RFC 8259,
+              DOI 10.17487/RFC8259, December 2017,
+              <https://www.rfc-editor.org/info/rfc8259>.
+
+   [RFC6234]  Eastlake 3rd, D. and T. Hansen, "US Secure Hash Algorithms
+              (SHA and SHA-based HMAC and HKDF)", RFC 6234,
+              DOI 10.17487/RFC6234, May 2011,
+              <https://www.rfc-editor.org/info/rfc6234>.
+
+   [RFC8126]  Cotton, M., Leiba, B., and T. Narten, "Guidelines for
+              Writing an IANA Considerations Section in RFCs", BCP 26,
+              RFC 8126, DOI 10.17487/RFC8126, June 2017,
+              <https://www.rfc-editor.org/info/rfc8126>.
+
+
+
+
+
+
+Editors                  Expires 17 January 2027               [Page 11]
+
+Internet-Draft            Agent Intent Receipt                 July 2026
+
+
+   [SHS]      National Institute of Standards and Technology, "Secure
+              Hash Standard (SHS)", FIPS 180-4, August 2015,
+              <https://csrc.nist.gov/publications/detail/fips/180/4/
+              final>.
+
+11.  Informative References
+
+   [RFC8785]  Rundgren, A., Jordan, B., and S. Erdtman, "JSON
+              Canonicalization Scheme (JCS)", RFC 8785,
+              DOI 10.17487/RFC8785, June 2020,
+              <https://www.rfc-editor.org/info/rfc8785>.
+
+   [RFC8032]  Josefsson, S. and I. Liusvaara, "Edwards-Curve Digital
+              Signature Algorithm (EdDSA)", RFC 8032,
+              DOI 10.17487/RFC8032, January 2017,
+              <https://www.rfc-editor.org/info/rfc8032>.
+
+   [x402]     x402, "x402: An HTTP-native payment protocol", 2025,
+              <https://x402.org>.
+
+   [EIP-191]  Swende, M. and N. Johnson, "EIP-191: Signed Data
+              Standard", 2016, <https://eips.ethereum.org/EIPS/eip-191>.
+
+   [EIP-712]  Belchior, R. and L. Logvinov, "EIP-712: Typed structured
+              data hashing and signing", 2017,
+              <https://eips.ethereum.org/EIPS/eip-712>.
+
+   [EIP-3009] Gao, P. and D. Mohsen, "EIP-3009: Transfer With
+              Authorization", 2020,
+              <https://eips.ethereum.org/EIPS/eip-3009>.
+
+   [SEC2]     Standards for Efficient Cryptography Group, "SEC 2:
+              Recommended Elliptic Curve Domain Parameters", 2010,
+              <https://www.secg.org/sec2-v2.pdf>.
+
+Appendix A.  Test Vectors
+
+   This appendix provides deterministic golden test vectors.  Any
+   conforming implementation MUST reproduce the exact hash and canonical
+   byte values below from the given inputs, and MUST produce byte-
+   identical signatures given the listed test keys.  The keys here are
+   well-known test keys and MUST NOT be used on a live chain.
+
+A.1.  Inputs
+
+   Intent object (hashed to intent_hash):
+
+
+
+
+
+Editors                  Expires 17 January 2027               [Page 12]
+
+Internet-Draft            Agent Intent Receipt                 July 2026
+
+
+   {
+     "action": "search",
+     "query": "cheapest flight SFO->NRT",
+     "constraints": {
+       "max_price_usd": 900,
+       "nonstop": true
+     }
+   }
+
+   Result object (hashed to result_hash):
+
+   {
+     "provider": "acme-search",
+     "answers": [
+       {
+         "price_usd": 812
+       }
+     ]
+   }
+
+   Settlement object embedded in the receipt:
+
+{
+  "tx_hash": "0x58f1c0000000000000000000000000000000000000000000000000000000abcd",
+  "amount": "0.05",
+  "currency": "USDC",
+  "chain": "base",
+  "facilitator": "facilitator.example",
+  "timestamp": "2026-07-16T00:00:00Z"
+}
+
+   Fixed metadata: issued_at = "2026-07-16T00:00:00Z", issuer =
+   "issuer.example".
+
+   Test keys (test-only, never used on a live chain):
+
+secp256k1 private key: 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+ed25519 seed (hex):    000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+
+A.2.  Computed Hashes
+
+intent_hash = e89e9e4315f34c58f639eb47b4bb627c1565fd39a8475c3b7fd9dab731feffb8
+result_hash = 262c92c42f58d42d907971cab83a15de0232cffbdd96461a464bf2c07fc20776
+
+A.3.  secp256k1-eip191 (Base) Vector
+
+   Signer address: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+
+
+
+
+Editors                  Expires 17 January 2027               [Page 13]
+
+Internet-Draft            Agent Intent Receipt                 July 2026
+
+
+   Canonical signable bytes (UTF-8), the exact string that is hashed and
+   signed:
+
+{"intent_hash":"e89e9e4315f34c58f639eb47b4bb627c1565fd39a8475c3b7fd9dab731feffb8","issued_at":"2026-07-16T00:00:00Z","issuer":"issuer.example","provider_used":"acme-search","result_hash":"262c92c42f58d42d907971cab83a15de0232cffbdd96461a464bf2c07fc20776","settlement":{"amount":"0.05","chain":"base","currency":"USDC","facilitator":"facilitator.example","timestamp":"2026-07-16T00:00:00Z","tx_hash":"0x58f1c0000000000000000000000000000000000000000000000000000000abcd"},"signature":{"algorithm":"secp256k1-eip191","signer":"0x70997970C51812dc3A010C7d01b50e0d17dc79C8"},"version":"AIR/1"}
+
+   Signature (base64):
+   EwCqgPNvVSjPtby8BMtxLLo+i0q7cc4TT4ScANVn1lBOTw263W1ntIcYNhq19k4MrLWgWHzY4pfr6ap/
+   lcfwuhw=
+
+   Signature (hex):
+   1300aa80f36f5528cfb5bcbc04cb712cba3e8b4abb71ce134f849c00d567d6504e4f0dbadd6d67b48718361ab5f64e0cacb5a0587cd8e297ebe9aa7f95c7f0ba1c
+
+A.4.  ed25519 (Solana) Vector
+
+   Signer public key (base58):
+   FAe4sisG95oZ42w7buUn5qEE4TAnfTTFPiguZUHmhiF
+
+   Canonical signable bytes (UTF-8), the exact string that is signed:
+
+{"intent_hash":"e89e9e4315f34c58f639eb47b4bb627c1565fd39a8475c3b7fd9dab731feffb8","issued_at":"2026-07-16T00:00:00Z","issuer":"issuer.example","provider_used":"acme-search","result_hash":"262c92c42f58d42d907971cab83a15de0232cffbdd96461a464bf2c07fc20776","settlement":{"amount":"0.05","chain":"base","currency":"USDC","facilitator":"facilitator.example","timestamp":"2026-07-16T00:00:00Z","tx_hash":"0x58f1c0000000000000000000000000000000000000000000000000000000abcd"},"signature":{"algorithm":"ed25519","signer":"FAe4sisG95oZ42w7buUn5qEE4TAnfTTFPiguZUHmhiF"},"version":"AIR/1"}
+
+   Signature (base64):
+   teFQgXN6pI5Vud5E8YpvDUhej9aX4PIaAFd+oQp6Cagkq3W5OiOPPE/Yt+lod6fo6d/
+   epeure2jCGeNJhlU9CA==
+
+   Signature (hex):
+   b5e15081737aa48e55b9de44f18a6f0d485e8fd697e0f21a00577ea10a7a09a824ab75b93a238f3c4fd8b7e96877a7e8e9dfdea5ebab7b68c219e34986553d08
+
+Appendix B.  Reference Implementation
+
+   The agent_intent_x402.receipt module of the agent-intent-x402 project
+   implements this specification: canonicalize, hash_object,
+   build_receipt, sign_receipt, verify_receipt, and the secp256k1-eip191
+   and ed25519 signer/verifier suites.  It is provided for
+   interoperability testing and is not normative.
+
+Acknowledgments
+
+   This work distills the offline-verifiable-receipt idea explored by
+   earlier agent-intent projects into a platform-neutral, x402-native
+   form.
+
+Author's Address
+
+   AIR Editors (editor)
+   Independent
+   Email: spec@example.org
+
+
+
+
+Editors                  Expires 17 January 2027               [Page 14]

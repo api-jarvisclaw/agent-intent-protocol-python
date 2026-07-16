@@ -1,6 +1,6 @@
 [project]
 name = "agent-intent-x402"
-version = "0.2.0"
+version = "0.3.0"
 description = "Pay-per-request access to any service for AI agents, over the open x402 protocol. Declare an intent, discover a provider, and settle on-chain with a single signature."
 readme = "README.md"
 license = {text = "MIT"}
@@ -27,7 +27,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "pytest-httpx>=0.21.0", "ruff>=0.1.0"]
+solana = ["pynacl>=1.5.0"]
+dev = ["pytest>=7.0", "pytest-httpx>=0.21.0", "pytest-asyncio>=0.23.0", "ruff>=0.1.0", "pynacl>=1.5.0"]
 
 [project.urls]
 Homepage = "https://github.com/api-jarvisclaw/agent-intent-x402"
@@ -46,6 +47,7 @@ packages = ["agent_intent_x402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [tool.ruff]
 target-version = "py310"
