@@ -1,26 +1,28 @@
-"""Agent Intent client with built-in x402 payment.
+"""Asynchronous Agent Intent client with built-in x402 payment.
 
-Declare an intent, discover a provider, and pay for the request on-chain
-over the open `x402 <https://x402.org>`_ protocol. When the client is
-given a :class:`~agent_intent_x402.wallet.Wallet`, any HTTP 402 challenge
-is answered automatically: the wallet signs the payment and the request
-is retried with a ``PAYMENT-SIGNATURE`` header — no accounts, no API keys.
+This is the ``asyncio`` mirror of :class:`agent_intent_x402.client.AIPClient`.
+It exposes the same protocol methods with identical semantics — declare an
+intent, discover a provider, and settle on-chain over the open
+`x402 <https://x402.org>`_ protocol — but every network call is awaitable.
 
-The client is vendor-neutral. ``endpoint`` defaults to a hosted gateway
-for convenience but can point at any compliant x402 service.
+When the client is given a :class:`~agent_intent_x402.wallet.Wallet`, any
+HTTP 402 challenge is answered automatically: the wallet signs the payment
+and the request is retried once with a ``PAYMENT-SIGNATURE`` header.
 
 Example::
 
-    from agent_intent_x402 import AIPClient, IntentType, OptimizeFor, Wallet
+    import asyncio
+    from agent_intent_x402 import AsyncAIPClient, IntentType, Wallet
 
-    wallet = Wallet(private_key="0x...")
-    client = AIPClient(wallet=wallet)
-    result = client.resolve(
-        IntentType.CHAT_COMPLETION,
-        constraints={"max_price_usd": 0.01},
-        preferences={"optimize_for": OptimizeFor.COST},
-    )
-    print(result.best_match.provider_id, result.best_match.model)
+    async def main():
+        async with AsyncAIPClient(wallet=Wallet(private_key="0x...")) as client:
+            result = await client.resolve(
+                IntentType.CHAT_COMPLETION,
+                constraints={"max_price_usd": 0.01},
+            )
+            print(result.best_match.provider_id)
+
+    asyncio.run(main())
 """
 
 from __future__ import annotations
@@ -30,6 +32,15 @@ from typing import Any, Optional, Union
 
 import httpx
 
+from .client import (
+    DEFAULT_ENDPOINT,
+    _coerce_constraints,
+    _coerce_preferences,
+    _extract_providers,
+    _ConstraintsArg,
+    _PreferencesArg,
+    __version__,
+)
 from .errors import (
     AIPAPIError,
     AIPAuthError,
@@ -37,43 +48,19 @@ from .errors import (
     AIPPaymentRequiredError,
 )
 from .models import (
-    Constraints,
     IntentType,
-    Preferences,
     Provider,
     ResolveResult,
 )
 from .wallet import Wallet
 
-DEFAULT_ENDPOINT = "https://api.jarvisclaw.ai"
-__version__ = "0.3.0"
 
-_ConstraintsArg = Union[Constraints, dict[str, Any], None]
-_PreferencesArg = Union[Preferences, dict[str, Any], None]
+class AsyncAIPClient:
+    """Asynchronous client with built-in x402 payment.
 
-
-def _coerce_constraints(value: _ConstraintsArg) -> dict[str, Any]:
-    if value is None:
-        return {}
-    if isinstance(value, Constraints):
-        return value.to_dict()
-    return dict(value)
-
-
-def _coerce_preferences(value: _PreferencesArg) -> dict[str, Any]:
-    if value is None:
-        return {}
-    if isinstance(value, Preferences):
-        return value.to_dict()
-    out = dict(value)
-    # normalize enum values so they serialize as plain strings
-    if "optimize_for" in out and out["optimize_for"] is not None:
-        out["optimize_for"] = str(out["optimize_for"])
-    return out
-
-
-class AIPClient:
-    """Synchronous client with built-in x402 payment.
+    Mirrors :class:`~agent_intent_x402.client.AIPClient` method-for-method;
+    every protocol call is a coroutine. See the sync client for full
+    argument documentation.
 
     Args:
         api_key: Optional bearer token for gateways that still use API-key
@@ -85,8 +72,7 @@ class AIPClient:
         endpoint: Base URL of the gateway. Defaults to a hosted service;
             override to target any compliant x402 deployment.
         timeout: Request timeout in seconds.
-        http_client: Optional preconfigured ``httpx.Client`` (for custom
-            transports, proxies, or connection pooling).
+        http_client: Optional preconfigured ``httpx.AsyncClient``.
     """
 
     def __init__(
@@ -96,25 +82,25 @@ class AIPClient:
         wallet: Optional[Wallet] = None,
         endpoint: str = DEFAULT_ENDPOINT,
         timeout: float = 30.0,
-        http_client: Optional[httpx.Client] = None,
+        http_client: Optional[httpx.AsyncClient] = None,
     ) -> None:
         self.api_key = api_key or os.getenv("JARVISCLAW_API_KEY")
         self.wallet = wallet
         self.endpoint = endpoint.rstrip("/")
         self._owns_client = http_client is None
-        self._http = http_client or httpx.Client(timeout=timeout)
+        self._http = http_client or httpx.AsyncClient(timeout=timeout)
 
     # ── context manager ────────────────────────────────────────────────
-    def __enter__(self) -> "AIPClient":
+    async def __aenter__(self) -> "AsyncAIPClient":
         return self
 
-    def __exit__(self, *exc: Any) -> None:
-        self.close()
+    async def __aexit__(self, *exc: Any) -> None:
+        await self.aclose()
 
-    def close(self) -> None:
+    async def aclose(self) -> None:
         """Close the underlying HTTP client (only if this client owns it)."""
         if self._owns_client:
-            self._http.close()
+            await self._http.aclose()
 
     # ── internal request helper ────────────────────────────────────────
     def _headers(self) -> dict[str, str]:
@@ -126,7 +112,7 @@ class AIPClient:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
-    def _request(
+    async def _request(
         self,
         method: str,
         path: str,
@@ -136,7 +122,7 @@ class AIPClient:
     ) -> Any:
         url = f"{self.endpoint}{path}"
         try:
-            resp = self._http.request(
+            resp = await self._http.request(
                 method, url, json=json, params=params, headers=self._headers()
             )
         except httpx.RequestError as exc:
@@ -144,7 +130,7 @@ class AIPClient:
 
         # x402: answer a payment challenge by signing it and retrying once.
         if resp.status_code == 402 and self.wallet is not None:
-            resp = self._pay_and_retry(
+            resp = await self._pay_and_retry(
                 resp, method, url, json=json, params=params
             )
 
@@ -162,7 +148,7 @@ class AIPClient:
                 body=resp.text,
             ) from exc
 
-    def _pay_and_retry(
+    async def _pay_and_retry(
         self,
         resp: httpx.Response,
         method: str,
@@ -185,7 +171,7 @@ class AIPClient:
         headers = self._headers()
         headers["PAYMENT-SIGNATURE"] = signature
         try:
-            return self._http.request(
+            return await self._http.request(
                 method, url, json=json, params=params, headers=headers
             )
         except httpx.RequestError as exc:
@@ -217,7 +203,7 @@ class AIPClient:
         raise AIPAPIError(message, status_code=code, detail=detail, body=body)
 
     # ── protocol methods ───────────────────────────────────────────────
-    def resolve(
+    async def resolve(
         self,
         intent: Union[IntentType, str],
         *,
@@ -225,19 +211,6 @@ class AIPClient:
         preferences: _PreferencesArg = None,
     ) -> ResolveResult:
         """Resolve an intent to ranked provider matches.
-
-        Args:
-            intent: The intent type, e.g. ``IntentType.CHAT_COMPLETION``.
-            constraints: Hard requirements a provider must satisfy. Accepts a
-                :class:`Constraints` instance or a plain dict, e.g.
-                ``{"max_price_usd": 0.01, "features": ["function_calling"]}``.
-            preferences: Soft ranking directives. Accepts a
-                :class:`Preferences` instance or a plain dict, e.g.
-                ``{"optimize_for": "cost", "limit": 5}``.
-
-        Returns:
-            A :class:`ResolveResult`. Use ``.best_match`` for the top provider
-            or ``.matches`` for the full ranked list.
 
         Endpoint: ``POST /v1/intent/resolve`` (requires authentication).
         """
@@ -248,10 +221,10 @@ class AIPClient:
         p = _coerce_preferences(preferences)
         if p:
             body["preferences"] = p
-        data = self._request("POST", "/v1/intent/resolve", json=body)
+        data = await self._request("POST", "/v1/intent/resolve", json=body)
         return ResolveResult.from_dict(data or {})
 
-    def resolve_natural(
+    async def resolve_natural(
         self,
         query: str,
         *,
@@ -259,9 +232,6 @@ class AIPClient:
         constraints: _ConstraintsArg = None,
     ) -> dict[str, Any]:
         """Resolve a natural-language query to providers or a clarification.
-
-        Unlike :meth:`resolve`, the gateway may respond with a follow-up
-        question instead of matches, so the raw response dict is returned.
 
         Endpoint: ``POST /v1/intent/resolve/natural`` (requires authentication).
         """
@@ -271,9 +241,9 @@ class AIPClient:
         c = _coerce_constraints(constraints)
         if c:
             body["constraints"] = c
-        return self._request("POST", "/v1/intent/resolve/natural", json=body) or {}
+        return await self._request("POST", "/v1/intent/resolve/natural", json=body) or {}
 
-    def discover(
+    async def discover(
         self,
         *,
         intent_type: Union[IntentType, str, None] = None,
@@ -285,10 +255,10 @@ class AIPClient:
         params: dict[str, Any] = {}
         if intent_type is not None:
             params["intent_type"] = str(intent_type)
-        data = self._request("GET", "/v1/intent/discover", params=params or None)
+        data = await self._request("GET", "/v1/intent/discover", params=params or None)
         return _extract_providers(data)
 
-    def execute(
+    async def execute(
         self,
         intent: Union[IntentType, str],
         payload: dict[str, Any],
@@ -297,15 +267,6 @@ class AIPClient:
         preferences: _PreferencesArg = None,
     ) -> Any:
         """Resolve an intent and execute it against the selected provider.
-
-        Args:
-            intent: The intent type to execute.
-            payload: The provider-facing request body (e.g. chat messages).
-            constraints: Hard requirements for provider selection.
-            preferences: Soft ranking directives for provider selection.
-
-        Returns:
-            The raw provider response, proxied through the gateway.
 
         Endpoint: ``POST /v1/intent/execute`` (requires authentication).
         """
@@ -316,33 +277,22 @@ class AIPClient:
         p = _coerce_preferences(preferences)
         if p:
             body["preferences"] = p
-        return self._request("POST", "/v1/intent/execute", json=body)
+        return await self._request("POST", "/v1/intent/execute", json=body)
 
-    def list_intent_types(self) -> list[str]:
+    async def list_intent_types(self) -> list[str]:
         """List the intent types the gateway supports.
 
         Endpoint: ``GET /v1/intent/types`` (no authentication required).
         """
-        data = self._request("GET", "/v1/intent/types")
+        data = await self._request("GET", "/v1/intent/types")
         if isinstance(data, dict):
             return data.get("intent_types", [])
         return data or []
 
-    def list_providers(self) -> list[Provider]:
+    async def list_providers(self) -> list[Provider]:
         """List all registered providers.
 
         Endpoint: ``GET /v1/providers`` (no authentication required).
         """
-        data = self._request("GET", "/v1/providers")
+        data = await self._request("GET", "/v1/providers")
         return _extract_providers(data)
-
-
-def _extract_providers(data: Any) -> list[Provider]:
-    """Normalize the various provider list shapes into ``list[Provider]``."""
-    if data is None:
-        return []
-    if isinstance(data, dict):
-        items = data.get("providers", data.get("matches", []))
-    else:
-        items = data
-    return [Provider.from_dict(item) for item in items if isinstance(item, dict)]
