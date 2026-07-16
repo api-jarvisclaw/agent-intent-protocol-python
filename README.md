@@ -1,5 +1,11 @@
 # agent-intent-x402
 
+[![CI](https://github.com/api-jarvisclaw/agent-intent-x402/actions/workflows/ci.yml/badge.svg)](https://github.com/api-jarvisclaw/agent-intent-x402/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/agent-intent-x402.svg)](https://pypi.org/project/agent-intent-x402/)
+[![Python](https://img.shields.io/pypi/pyversions/agent-intent-x402.svg)](https://pypi.org/project/agent-intent-x402/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-informational.svg)](LICENSE)
+[![x402](https://img.shields.io/badge/protocol-x402-8A2BE2.svg)](https://x402.org)
+
 Pay-per-request access to any service, for AI agents — over the open
 [x402](https://x402.org) protocol.
 
@@ -10,9 +16,17 @@ price with HTTP `402 Payment Required`; the client signs and settles.
 Because payment speaks the open x402 standard, the same client works
 against any compliant gateway.
 
+- **No accounts, no API keys** — a wallet is the only credential.
+- **Single-signature payments** — sign an [EIP-3009](https://eips.ethereum.org/EIPS/eip-3009) authorization; the gateway settles on-chain, no gas from your side.
+- **Vendor-neutral** — the same client works against any x402-compliant gateway; nothing here is tied to one platform.
+- **Offline-verifiable receipts** — every settlement can return an [AIR/1](#offline-verifiable-receipts) receipt that anyone can verify without trusting the issuer.
+- **Base and Solana** — `secp256k1`/EIP-191 for EVM chains, `ed25519` for Solana.
+
 ```bash
 pip install agent-intent-x402
 ```
+
+Jump straight to [runnable examples](examples/), or read on for the guided tour.
 
 ## Quick start
 
@@ -115,6 +129,29 @@ All exceptions derive from `AIPError`:
 
 `WalletError` is raised when a `402` challenge cannot be signed (missing
 key, malformed terms).
+
+## Offline-verifiable receipts
+
+When a request settles, the gateway can return an **AIR/1** receipt — a
+self-certifying record that a named provider fulfilled the request and it
+was paid for on-chain. The point: anyone can verify it *without trusting
+the party that issued it*. No callback to the issuer, no shared secret,
+just the receipt bytes and public-key math.
+
+```python
+from agent_intent_x402 import verify_receipt
+
+result = verify_receipt(receipt, intent=intent, result=response)
+if result.valid:
+    print("verified — signed by", result.signer)
+```
+
+Verification recomputes the intent and result hashes, checks the
+signature against the signer's public key, and rejects any tampering.
+Two signature suites are supported: `secp256k1`/EIP-191 for EVM chains
+like Base (the same key type that signs x402 payments) and `ed25519`
+for Solana. See [`examples/04_offline_receipt.py`](examples/04_offline_receipt.py)
+for an end-to-end, network-free demo.
 
 ## Protocol
 
